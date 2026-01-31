@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doctor-Patient Interactive Conversation</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🎤 Doctor-Patient Interactive Conversation</h1>
+            <p>Real-time Speech-to-Text & Two-Way Translation powered by Soniox</p>
+        </header>
+
+        <!-- Controls Section -->
+        <section class="controls-section">
+            <div class="control-row">
+                <!-- Language Selection -->
+                <div class="language-group">
+                    <div class="language-control">
+                        <label for="doctor-lang">🏥 Doctor Language:</label>
+                        <select id="doctor-lang">
+                            <option value="en">English (en)</option>
+                            <option value="es">Spanish (es)</option>
+                            <option value="fr">French (fr)</option>
+                            <option value="de">German (de)</option>
+                            <option value="hi">Hindi (hi)</option>
+                            <option value="te">Telugu (te)</option>
+                            <option value="ta">Tamil (ta)</option>
+                            <option value="kn">Kannada (kn)</option>
+                            <option value="ml">Malayalam (ml)</option>
+                            <option value="mr">Marathi (mr)</option>
+                            <option value="gu">Gujarati (gu)</option>
+                            <option value="bn">Bengali (bn)</option>
+                            <option value="pa">Punjabi (pa)</option>
+                            <option value="or">Odia (or)</option>
+                            <option value="as">Assamese (as)</option>
+                            <option value="ur">Urdu (ur)</option>
+                        </select>
+                    </div>
+
+                    <div class="language-control">
+                        <label for="patient-lang">👤 Patient Language:</label>
+                        <select id="patient-lang">
+                            <option value="en">English (en)</option>
+                            <option value="es">Spanish (es)</option>
+                            <option value="fr">French (fr)</option>
+                            <option value="de">German (de)</option>
+                            <option value="hi">Hindi (hi)</option>
+                            <option value="te">Telugu (te)</option>
+                            <option value="ta">Tamil (ta)</option>
+                            <option value="kn">Kannada (kn)</option>
+                            <option value="ml">Malayalam (ml)</option>
+                            <option value="mr">Marathi (mr)</option>
+                            <option value="gu">Gujarati (gu)</option>
+                            <option value="bn">Bengali (bn)</option>
+                            <option value="pa">Punjabi (pa)</option>
+                            <option value="or">Odia (or)</option>
+                            <option value="as">Assamese (as)</option>
+                            <option value="ur">Urdu (ur)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Main Buttons -->
+                <div class="button-group">
+                    <button id="start-btn" class="btn btn-success" title="Start recording conversation">
+                        🎙️ Start Conversation
+                    </button>
+                    <button id="stop-btn" class="btn btn-danger" disabled title="Stop recording and save">
+                        ⛔ Stop Conversation
+                    </button>
+                    <button id="clear-btn" class="btn btn-secondary" title="Clear all boxes">
+                        🗑️ Clear
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status and Options -->
+            <div class="status-row">
+                <div class="status-box">
+                    <span class="status-label">Status:</span>
+                    <span id="status-text" class="status-value">Ready</span>
+                </div>
+
+                <div class="timer-box">
+                    <span class="timer-label">Duration:</span>
+                    <span id="timer" class="timer-value">00:00</span>
+                </div>
+
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" id="auto-scroll" checked>
+                        📌 Auto-scroll
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <!-- Three Boxes Section -->
+        <section class="boxes-section">
+            <!-- Box 1: Original -->
+            <div class="box box-1">
+                <div class="box-header">
+                    <h2>🟦 Box #1: Original Conversation</h2>
+                    <span class="box-info">Raw transcription with speaker tags</span>
+                </div>
+                <div class="box-content" id="box-original">
+                    <p class="placeholder">[Waiting for conversation to start...]</p>
+                </div>
+            </div>
+
+            <!-- Box 2: Doctor Language -->
+            <div class="box box-2">
+                <div class="box-header">
+                    <h2>🟩 Box #2: Doctor's View</h2>
+                    <span class="box-info" id="box-doctor-lang">English</span>
+                </div>
+                <div class="box-content" id="box-doctor">
+                    <p class="placeholder">[Waiting for conversation to start...]</p>
+                </div>
+            </div>
+
+            <!-- Box 3: Patient Language -->
+            <div class="box box-3">
+                <div class="box-header">
+                    <h2>🟨 Box #3: Patient's View</h2>
+                    <span class="box-info" id="box-patient-lang">Patient Language</span>
+                </div>
+                <div class="box-content" id="box-patient">
+                    <p class="placeholder">[Waiting for conversation to start...]</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Export Section -->
+        <section class="export-section">
+            <button id="download-btn" class="btn btn-info" disabled title="Download all boxes as JSON">
+                💾 Download JSON
+            </button>
+            <button id="export-txt-btn" class="btn btn-info" disabled title="Export as formatted text">
+                📄 Export Text
+            </button>
+            <span id="export-status" class="export-status"></span>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>
+                Powered by <strong>Soniox AI</strong> • 
+                Built with <strong>FastAPI</strong> & <strong>LangChain</strong> • 
+                Real-time Translation & Speaker Diarization
+            </p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
