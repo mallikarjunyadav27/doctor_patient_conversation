@@ -25,20 +25,22 @@ class SonioxWSClient:
         self.config_sent = False
         self.connected = False
     
-    async def connect(self, doctor_lang: str = "en", patient_lang: str = "te"):
+    async def connect(self, doctor_lang: str = "en", patient_lang: str = "en"):
         """Initialize WebSocket connection to Soniox"""
         if not self.api_key:
             raise ValueError("SONIOX_API_KEY not set in environment")
         
-        # Validate: Languages must be different (Soniox requirement)
-        if doctor_lang == patient_lang:
-            raise ValueError(f"Doctor and Patient languages must be different. Got: {doctor_lang} and {patient_lang}")
-        
+        # Allow same language (no longer require different languages)
         # Debug: Show API key status (masked for security)
         key_preview = f"{self.api_key[:4]}...{self.api_key[-4:]}" if len(self.api_key) > 8 else "***"
         print(f"🔑 Soniox API Key: {key_preview} (length: {len(self.api_key)})")
         print(f"📡 Model: {self.model}")
         print(f"🗣️  Languages: Doctor={doctor_lang}, Patient={patient_lang}")
+        
+        # Check if same language
+        self.same_language = (doctor_lang == patient_lang)
+        if self.same_language:
+            print(f"⚠️  Same language detected ({doctor_lang}) - Translation disabled, Box 1 only")
         
         self.doctor_lang = doctor_lang
         self.patient_lang = patient_lang
@@ -71,18 +73,24 @@ class SonioxWSClient:
             "audio_format": "pcm_s16le",
             "sample_rate": 16000,
             "num_channels": 1,
-            "language_hints": [self.doctor_lang, self.patient_lang],
+            "language_hints": [self.doctor_lang] if self.same_language else [self.doctor_lang, self.patient_lang],
             "enable_speaker_diarization": True,
             "enable_endpoint_detection": True,
-            "render": "everything",  # Returns all forms (original + translations)
-            "translation": {
+            "render": "everything",
+            "enable_language_identification": True,
+        }
+        
+        # Only add translation if languages are different (saves API cost)
+        if not self.same_language:
+            config["translation"] = {
                 "type": "two_way",
                 "language_a": self.doctor_lang,
                 "language_b": self.patient_lang
-            },
-            "enable_language_identification": True,
-        }
-        print(f"📋 Soniox Config: {json.dumps(config, indent=2)}")
+            }
+        
+        print(f"📋 Soniox Config (Same Language: {self.same_language}):")
+        print(f"   - Language Hints: {config.get('language_hints')}")
+        print(f"   - Translation: {'Disabled (same language)' if self.same_language else 'Enabled'}")
         return config
     
     async def send_audio(self, chunk: bytes):
@@ -103,7 +111,8 @@ class SonioxWSClient:
             return None
         
         try:
-            msg = await asyncio.wait_for(self.ws.recv(), timeout=30.0)
+            # Increased timeout from 30s to 60s for proper speech detection
+            msg = await asyncio.wait_for(self.ws.recv(), timeout=60.0)
             if msg:
                 data = json.loads(msg)
                 
@@ -121,6 +130,7 @@ class SonioxWSClient:
                 return data
         except asyncio.TimeoutError:
             # No message received but connection still active
+            print("⏱️  Soniox timeout (still listening...)")
             return None
         except websockets.exceptions.ConnectionClosed:
             print("ERROR: Soniox connection closed")

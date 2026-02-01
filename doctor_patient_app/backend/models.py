@@ -1,106 +1,152 @@
-"""
-Pydantic models for type safety and validation
-"""
+# backend/models.py
+
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 from datetime import datetime
+import unicodedata
+
+# =========================
+# Helper functions
+# =========================
+
+def is_indic_char(ch: str) -> bool:
+    """Check if character belongs to Indic Unicode blocks"""
+    if not ch:
+        return False
+    block = unicodedata.name(ch, "")
+    return any(x in block for x in [
+        "TELUGU", "DEVANAGARI", "TAMIL", "KANNADA",
+        "MALAYALAM", "BENGALI", "GURMUKHI", "ORIYA"
+    ])
+
+def smart_join(existing: str, new: str) -> str:
+    """
+    Join streamed tokens safely:
+    - Preserve Indic grapheme clusters
+    - Preserve English word spacing
+    """
+    if not existing:
+        return new
+
+    if not new:
+        return existing
+
+    last_char = existing[-1]
+    first_char = new[0]
+
+    # Indic scripts → NEVER add space
+    if is_indic_char(last_char) or is_indic_char(first_char):
+        return existing + new
+
+    # English / Latin scripts
+    if last_char.isalnum() and first_char.isalnum():
+        return existing + " " + new
+
+    return existing + new
 
 
-class TokenData(BaseModel):
-    """Transcription token from Soniox"""
-    text: str
-    is_final: bool
-    speaker: Optional[str] = None
-    language: Optional[str] = None
-    translation_status: str = "none"
-    source_language: Optional[str] = None
-
+# =========================
+# Data models
+# =========================
 
 class ConversationEntry(BaseModel):
-    """Single conversation entry for storage"""
     timestamp: str
     speaker: str
     text: str
     language: str
-    translation_status: str = "none"
+    translation_status: str
 
+
+# =========================
+# Three-box buffer
+# =========================
 
 class BoxBuffers:
-    """Three-box display for doctor-patient conversation"""
-    
+    """
+    Maintains 3 UI boxes:
+    1. Original
+    2. Doctor language
+    3. Patient language
+    """
+
     def __init__(self):
-        self.original = ""          # Box 1: original with speaker tags
-        self.doctor_lang = ""       # Box 2: Doctor language
-        self.patient_lang = ""      # Box 3: Patient language
-        self._last_speaker = None
-        self.entries = []           # Store all entries for JSON export
-    
-    def add_to_original(self, speaker: Optional[str], text: str, timestamp: str = None):
-        """Add to original box with speaker tag"""
-        if not text:
-            return
-        
-        if timestamp is None:
-            timestamp = datetime.now().isoformat()
-        
-        if speaker and speaker != self._last_speaker:
-            self.original += f"\n[{speaker}]: "
-            self._last_speaker = speaker
-        
-        self.original += text
-        
-        # Store entry for export
-        if speaker:
-            self.entries.append({
-                "timestamp": timestamp,
-                "speaker": speaker,
-                "text": text,
-                "language": "original",
-                "translation_status": "original"
-            })
-    
-    def add_to_doctor(self, text: str, timestamp: str = None):
-        """Add to doctor's language view"""
-        if not text:
-            return
-        
-        if timestamp is None:
-            timestamp = datetime.now().isoformat()
-        
-        self.doctor_lang += text
-    
-    def add_to_patient(self, text: str, timestamp: str = None):
-        """Add to patient's language view"""
-        if not text:
-            return
-        
-        if timestamp is None:
-            timestamp = datetime.now().isoformat()
-        
-        self.patient_lang += text
-    
-    def to_dict(self) -> Dict[str, str]:
-        """Convert to dictionary for UI"""
-        return {
-            "original": self.original[-2000:] or "[Waiting for speech...]",
-            "doctor": self.doctor_lang[-2000:] or "[Waiting for speech...]",
-            "patient": self.patient_lang[-2000:] or "[Waiting for speech...]",
-        }
-    
-    def reset(self):
-        """Reset all buffers"""
         self.original = ""
-        self.doctor_lang = ""
-        self.patient_lang = ""
-        self._last_speaker = None
-        self.entries = []
+        self.doctor = ""
+        self.patient = ""
 
+        self._last_original_speaker = None
+        self._last_doctor_speaker = None
+        self._last_patient_speaker = None
 
-class RecordingMetadata(BaseModel):
-    """Metadata for saved recordings"""
-    filename: str
-    duration: float
-    doctor_language: str
-    patient_language: str
-    timestamp: str
-    total_entries: int
+        self.entries: List[Dict] = []
+
+    # -------- Box 1 --------
+    def add_to_original(self, speaker: str, text: str, timestamp: str):
+        if speaker != self._last_original_speaker:
+            if self.original:
+                self.original += "\n"
+            self.original += f"[{speaker}]: "
+            self._last_original_speaker = speaker
+
+        self.original = smart_join(self.original, text)
+
+        self.entries.append({
+            "timestamp": timestamp,
+            "speaker": speaker,
+            "text": text,
+            "language": "original",
+            "translation_status": "original"
+        })
+
+    # -------- Box 2 --------
+    def add_to_doctor(self, speaker: str, text: str, timestamp: str, language: str):
+        if speaker != self._last_doctor_speaker:
+            if self.doctor:
+                self.doctor += "\n"
+            self.doctor += f"[{speaker}]: "
+            self._last_doctor_speaker = speaker
+
+        self.doctor = smart_join(self.doctor, text)
+
+        self.entries.append({
+            "timestamp": timestamp,
+            "speaker": speaker,
+            "text": text,
+            "language": language,
+            "translation_status": "doctor"
+        })
+
+    # -------- Box 3 --------
+    def add_to_patient(self, speaker: str, text: str, timestamp: str, language: str):
+        if speaker != self._last_patient_speaker:
+            if self.patient:
+                self.patient += "\n"
+            self.patient += f"[{speaker}]: "
+            self._last_patient_speaker = speaker
+
+        self.patient = smart_join(self.patient, text)
+
+        self.entries.append({
+            "timestamp": timestamp,
+            "speaker": speaker,
+            "text": text,
+            "language": language,
+            "translation_status": "patient"
+        })
+
+    # -------- Helpers --------
+    def to_dict(self) -> Dict[str, str]:
+        return {
+            "original": self.original or "",
+            "doctor": self.doctor or "",
+            "patient": self.patient or "",
+        }
+
+    def reset(self):
+        self.original = ""
+        self.doctor = ""
+        self.patient = ""
+        self._last_original_speaker = None
+        self._last_doctor_speaker = None
+        self._last_patient_speaker = None
+        self.entries.clear()

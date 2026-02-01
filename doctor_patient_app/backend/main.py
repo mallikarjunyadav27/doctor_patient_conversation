@@ -148,7 +148,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         result = await soniox_client.receive_tokens()
                         
                         if result is None:
-                            await asyncio.sleep(0.01)
+                            # Shorter sleep for faster responsiveness
+                            await asyncio.sleep(0.001)
                             continue
                         
                         message_count += 1
@@ -158,9 +159,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         
                         if not tokens_list:
                             # This is normal - heartbeat message
-                            if message_count % 5 == 0:
+                            if message_count % 10 == 0:
                                 print(f"   📡 Soniox heartbeat (still listening...)")
-                            await asyncio.sleep(0.01)
+                            await asyncio.sleep(0.001)
                             continue
                         
                         print(f"🔄 [{message_count}] Received {len(tokens_list)} token(s) from Soniox")
@@ -195,7 +196,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                 break
                     
                     except asyncio.TimeoutError:
-                        await asyncio.sleep(0.01)
+                        # Faster loop, don't sleep long
+                        await asyncio.sleep(0.001)
                     except Exception as inner_e:
                         print(f"   ❌ Error processing token: {inner_e}")
                         await asyncio.sleep(0.01)

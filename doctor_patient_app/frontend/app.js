@@ -132,16 +132,16 @@ class DoctorPatientApp {
             this.doctorLang = this.doctorLangSelect.value;
             this.patientLang = this.patientLangSelect.value;
             
-            // Validate: Languages must be different (Soniox requirement)
-            if (this.doctorLang === this.patientLang) {
-                this.statusText.textContent = "❌ Doctor and Patient languages must be different";
-                this.statusText.classList.add("error");
-                return;
-            }
-            
             // Update display
             this.boxDoctorLang.textContent = this.getLangName(this.doctorLang);
             this.boxPatientLang.textContent = this.getLangName(this.patientLang);
+            
+            // Log language selection
+            if (this.doctorLang === this.patientLang) {
+                console.log(`✓ Same language mode: ${this.getLangName(this.doctorLang)} (Box 1 only)`);
+            } else {
+                console.log(`✓ Translation mode: ${this.getLangName(this.doctorLang)} ↔ ${this.getLangName(this.patientLang)}`);
+            }
             
             // Request microphone access
             this.mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -299,8 +299,9 @@ class DoctorPatientApp {
         // Create source from media stream
         const source = this.audioContext.createMediaStreamSource(this.mediaStream);
         
-        // Create processor - smaller buffer for lower latency
-        const processor = this.audioContext.createScriptProcessor(2048, 1, 1);
+        // CRITICAL: Use smaller buffer (1024) for lower latency and real-time processing
+        // Larger buffers cause timeouts and missed speech detection
+        const processor = this.audioContext.createScriptProcessor(1024, 1, 1);
         
         let audioChunkCount = 0;
         let totalBytesSent = 0;
@@ -325,10 +326,10 @@ class DoctorPatientApp {
                 
                 // Log every 10 chunks
                 if (audioChunkCount % 10 === 0) {
-                    console.log(`🔊 Audio: ${audioChunkCount} chunks (${totalBytesSent} bytes, rate: 16000 Hz)`);
+                    console.log(`🔊 Audio: ${audioChunkCount} chunks (${totalBytesSent} bytes, rate: 16000 Hz, buffer: 1024)`);
                 }
                 
-                // Send PCM16 buffer to server
+                // Send PCM16 buffer to server IMMEDIATELY (no buffering)
                 this.ws.send(pcm16.buffer);
             }
         };
@@ -351,6 +352,34 @@ class DoctorPatientApp {
     }
     
     /**
+     * Split text into lines for better readability
+     */
+    splitTextIntoLines(text, maxCharsPerLine = 80) {
+        if (!text) return "";
+        
+        // Split by sentences (. ! ?)
+        const sentences = text.split(/(?<=[.!?])\s+/);
+        
+        let lines = [];
+        let currentLine = "";
+        
+        sentences.forEach(sentence => {
+            if ((currentLine + sentence).length > maxCharsPerLine && currentLine.length > 0) {
+                lines.push(currentLine.trim());
+                currentLine = sentence;
+            } else {
+                currentLine += (currentLine.length > 0 ? " " : "") + sentence;
+            }
+        });
+        
+        if (currentLine.length > 0) {
+            lines.push(currentLine.trim());
+        }
+        
+        return lines.join("\n");
+    }
+    
+    /**
      * Update all three boxes with latest content
      */
     updateBoxes(boxes) {
@@ -359,10 +388,15 @@ class DoctorPatientApp {
             const doctor = boxes.doctor || "[No content]";
             const patient = boxes.patient || "[No content]";
             
-            // Update content
-            this.boxOriginal.textContent = original;
-            this.boxDoctor.textContent = doctor;
-            this.boxPatient.textContent = patient;
+            // Split text into lines for better readability
+            const originalLines = this.splitTextIntoLines(original);
+            const doctorLines = this.splitTextIntoLines(doctor);
+            const patientLines = this.splitTextIntoLines(patient);
+            
+            // Update content with split lines
+            this.boxOriginal.textContent = originalLines;
+            this.boxDoctor.textContent = doctorLines;
+            this.boxPatient.textContent = patientLines;
             
             // Store for export
             this.conversationData.original = original;

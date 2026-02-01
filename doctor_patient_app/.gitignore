@@ -46,8 +46,7 @@ env/
 logs/
 
 # Recordings (except directory structure)
-recordings/*.json
-
+recordings
 # Temporary
 *.tmp
 *.temp
