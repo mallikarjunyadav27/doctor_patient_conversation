@@ -252,7 +252,7 @@ class DoctorPatientApp {
                     
                     // Update boxes with latest data
                     if (data.boxes) {
-                        this.updateBoxes(data.boxes);
+                        this.updateBoxes(data.boxes, data.same_language);
                     }
                     
                     // Store conversation data
@@ -382,21 +382,33 @@ class DoctorPatientApp {
     /**
      * Update all three boxes with latest content
      */
-    updateBoxes(boxes) {
+    updateBoxes(boxes, sameLanguage = false) {
         if (boxes) {
             const original = boxes.original || "[No content]";
             const doctor = boxes.doctor || "[No content]";
             const patient = boxes.patient || "[No content]";
             
-            // Split text into lines for better readability
-            const originalLines = this.splitTextIntoLines(original);
-            const doctorLines = this.splitTextIntoLines(doctor);
-            const patientLines = this.splitTextIntoLines(patient);
+            // Format content with speaker highlighting
+            const originalHTML = this.formatContentWithSpeakers(original, "original");
+            const doctorHTML = this.formatContentWithSpeakers(doctor, "doctor");
+            const patientHTML = this.formatContentWithSpeakers(patient, "patient");
             
-            // Update content with split lines
-            this.boxOriginal.textContent = originalLines;
-            this.boxDoctor.textContent = doctorLines;
-            this.boxPatient.textContent = patientLines;
+            // Update content with HTML formatting
+            this.boxOriginal.innerHTML = originalHTML;
+            this.boxDoctor.innerHTML = doctorHTML;
+            this.boxPatient.innerHTML = patientHTML;
+            
+            // Hide boxes 2 & 3 if same language using CSS class
+            const doctorContainer = document.getElementById("box-doctor-container");
+            const patientContainer = document.getElementById("box-patient-container");
+            
+            if (sameLanguage) {
+                doctorContainer.classList.add("hidden-box");
+                patientContainer.classList.add("hidden-box");
+            } else {
+                doctorContainer.classList.remove("hidden-box");
+                patientContainer.classList.remove("hidden-box");
+            }
             
             // Store for export
             this.conversationData.original = original;
@@ -416,6 +428,37 @@ class DoctorPatientApp {
                 setTimeout(() => box.classList.remove("updating"), 300);
             });
         }
+    }
+    
+    /**
+     * Format content with speaker highlighting
+     */
+    formatContentWithSpeakers(text, boxType) {
+        if (!text || text === "[No content]") {
+            return `<p class="placeholder">${text}</p>`;
+        }
+        
+        // Split by [Doctor] or [Patient] tags and format each line
+        let html = text
+            .split('\n')
+            .map(line => {
+                if (!line.trim()) return '';
+                
+                // Detect speaker from the line
+                if (line.includes('[Doctor]:')) {
+                    // Replace the tag with colored span and add styling
+                    return `<div class="speaker-doctor">${line.replace('[Doctor]:', '<strong>👨‍⚕️ Doctor:</strong>')}</div>`;
+                } else if (line.includes('[Patient]:')) {
+                    // Replace the tag with colored span and add styling
+                    return `<div class="speaker-patient">${line.replace('[Patient]:', '<strong>👤 Patient:</strong>')}</div>`;
+                } else {
+                    // Plain text line (continuation)
+                    return `<div>${line}</div>`;
+                }
+            })
+            .join('');
+        
+        return html || '<p class="placeholder">[Waiting for content...]</p>';
     }
     
     /**

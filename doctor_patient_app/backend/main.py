@@ -76,6 +76,8 @@ async def websocket_endpoint(websocket: WebSocket):
     audio_processor = None
     doctor_lang = "en"
     patient_lang = "te"
+    ws_closed = False  # Flag to track WebSocket closure
+    soniox_task = None  # Task handle for clean cancellation
     
     try:
         # Wait for initial config
@@ -106,6 +108,7 @@ async def websocket_endpoint(websocket: WebSocket):
         # Create tasks for receiving from browser and Soniox
         async def receive_from_browser():
             """Receive audio chunks from browser and forward to Soniox"""
+            nonlocal ws_closed
             chunk_count = 0
             total_bytes = 0
             try:
@@ -131,9 +134,11 @@ async def websocket_endpoint(websocket: WebSocket):
             
             except WebSocketDisconnect:
                 print("Browser disconnected - closing Soniox stream")
+                ws_closed = True
                 await soniox_client.end_stream()
             except Exception as e:
                 print(f"Error receiving from browser: {e}")
+                ws_closed = True
                 try:
                     await soniox_client.end_stream()
                 except:
@@ -141,9 +146,10 @@ async def websocket_endpoint(websocket: WebSocket):
         
         async def receive_from_soniox():
             """Receive tokens from Soniox and send to browser"""
+            nonlocal ws_closed
             try:
                 message_count = 0
-                while True:
+                while not ws_closed:  # Check if WebSocket is closed
                     try:
                         result = await soniox_client.receive_tokens()
                         
@@ -151,6 +157,10 @@ async def websocket_endpoint(websocket: WebSocket):
                             # Shorter sleep for faster responsiveness
                             await asyncio.sleep(0.001)
                             continue
+                        
+                        # Check again before processing
+                        if ws_closed:
+                            break
                         
                         message_count += 1
                         
@@ -168,6 +178,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         
                         # Process EACH token individually (partial AND final)
                         for token in tokens_list:
+                            # Check if closed before processing each token
+                            if ws_closed:
+                                break
+                            
                             is_final = token.get("is_final", False)
                             text = token.get("text", "")
                             
@@ -181,19 +195,22 @@ async def websocket_endpoint(websocket: WebSocket):
                             boxes = router.get_boxes()
                             
                             # Send to browser immediately (don't wait for is_final)
-                            try:
-                                token_type = "🔵 FINAL" if is_final else "⚫ PARTIAL"
-                                print(f"   {token_type}: {text[:60]}")
-                                
-                                await websocket.send_json({
-                                    "type": "final" if is_final else "partial",
-                                    "text": text,
-                                    "is_final": is_final,
-                                    "boxes": boxes
-                                })
-                            except Exception as e:
-                                print(f"   ❌ Error sending to browser: {e}")
-                                break
+                            if not ws_closed:  # Final check before sending
+                                try:
+                                    token_type = "🔵 FINAL" if is_final else "⚫ PARTIAL"
+                                    print(f"   {token_type}: {text[:60]}")
+                                    
+                                    await websocket.send_json({
+                                        "type": "final" if is_final else "partial",
+                                        "text": text,
+                                        "is_final": is_final,
+                                        "boxes": boxes,
+                                        "same_language": router.same_language
+                                    })
+                                except Exception as e:
+                                    print(f"   ❌ Error sending to browser: {e}")
+                                    ws_closed = True
+                                    break
                     
                     except asyncio.TimeoutError:
                         # Faster loop, don't sleep long
@@ -204,16 +221,30 @@ async def websocket_endpoint(websocket: WebSocket):
             
             except Exception as e:
                 print(f"❌ Error in receive_from_soniox: {e}")
+                ws_closed = True
                 import traceback
                 traceback.print_exc()
         
-        # Run both tasks concurrently - use gather so both run until one errors
+        # Run both tasks concurrently
+        browser_task = asyncio.create_task(receive_from_browser())
+        soniox_task = asyncio.create_task(receive_from_soniox())
+        
         try:
-            await asyncio.gather(
-                receive_from_browser(),
-                receive_from_soniox(),
-                return_exceptions=False
+            # Wait for either task to complete
+            done, pending = await asyncio.wait(
+                [browser_task, soniox_task],
+                return_when=asyncio.FIRST_COMPLETED
             )
+            
+            # Mark as closed and cancel pending tasks
+            ws_closed = True
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        
         except asyncio.CancelledError:
             pass
         except Exception as e:

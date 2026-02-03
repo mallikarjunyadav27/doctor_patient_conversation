@@ -23,8 +23,19 @@ class LangChainRouter:
         self.speaker_changed = False
         # Check if same language (optimization)
         self.same_language = (doctor_lang == patient_lang)
+        
+        # Track speakers for diarization fallback
+        self.speaker_registry = {}  # Map speaker_id to label
+        self.last_detected_speaker_id = None
+        self.speaker_id_counter = 0
+        
+        # For turn-based detection when speaker_id unavailable
+        self.sentence_count = 0  # Count sentences to alternate speakers
+        self.last_sentence_had_punctuation = False
+        
         if self.same_language:
             print(f"✓ LangChain Router: Same language mode ({doctor_lang})")
+            print(f"   Using speaker diarization to distinguish Doctor/Patient")
         else:
             print(f"✓ LangChain Router: Translation mode ({doctor_lang} ↔ {patient_lang})")
     
@@ -55,28 +66,23 @@ class LangChainRouter:
             return None
         
         # Get speaker info from token
-        speaker_id = token.get("speaker_id", 0)
+        # NOTE: Soniox provides 'speaker' key, not 'speaker_id'
+        speaker_id = token.get("speaker") or token.get("speaker_id")
         language = token.get("language") or token.get("detected_language", "unknown")
         is_final = token.get("is_final", False)
         
-        # SMART SPEAKER DETECTION: Map speaker to Doctor or Patient based on language
-        if self.same_language:
-            # In same language mode, use speaker_id to distinguish
-            if speaker_id == 0:
-                speaker_label = "Doctor"
-            elif speaker_id == 1:
-                speaker_label = "Patient"
-            else:
-                speaker_label = f"Speaker {speaker_id}"
-        else:
-            # In translation mode, detect speaker by language
-            if language == self.doctor_lang:
-                speaker_label = "Doctor"
-            elif language == self.patient_lang:
-                speaker_label = "Patient"
-            else:
-                # Fallback to speaker_id
-                speaker_label = f"Speaker {speaker_id}"
+        # DEBUG: Log full token structure to understand Soniox format
+        if is_final and text and text != "<end>":
+            print(f"     DEBUG TOKEN KEYS: {list(token.keys())}")
+            print(f"     DEBUG: speaker={speaker_id}, language={language}, text='{text[:40]}'...")
+        
+        # IMPROVED SPEAKER DETECTION
+        speaker_label = self._detect_speaker(speaker_id, language)
+        
+        # Log speaker assignment on change
+        if speaker_label != self.current_speaker:
+            print(f"     🔄 SPEAKER CHANGE: {self.current_speaker} → {speaker_label}")
+            self.current_speaker = speaker_label
         
         # Determine translation status
         translated = token.get("translated", False)
@@ -103,9 +109,11 @@ class LangChainRouter:
         
         # ===== CRITICAL FIX: Only route FINAL tokens to boxes =====
         if is_final:
-            # Final token - send to boxes
-            self.current_speaker = speaker_label
+            # Final token - send to boxes with current speaker
             self._route_to_boxes(text, speaker_label, language, translation_status, timestamp)
+            
+            # Check if this sentence ends, and prepare for speaker switch
+            self.check_speaker_change(text)
             
             # Clear partial buffer for this speaker after final token
             if speaker_label in self.partial_buffer:
@@ -136,12 +144,21 @@ class LangChainRouter:
     ):
         """Route token to appropriate boxes - ONLY for FINAL tokens"""
         
-        # Box 1: Original transcript (spoken language + speaker tag)
-        self.boxes.add_to_original(speaker, text, timestamp)
-        
-        # If same language, don't populate Box 2 and Box 3 (save translation cost)
+        # If same language mode:
+        # - ONLY add if speech language matches configured language
+        # - Skip any detected different language (e.g., if patient speaks Telugu but we selected English)
         if self.same_language:
+            # In same-language mode, only add to Box 1 if language matches config
+            if speaker == "Doctor" and language == self.doctor_lang:
+                self.boxes.add_to_original(speaker, text, timestamp)
+            elif speaker == "Patient" and language == self.patient_lang:
+                self.boxes.add_to_original(speaker, text, timestamp)
+            # Skip any speech in different language
             return
+        
+        # Translation mode: Add to all appropriate boxes
+        # Box 1: Original transcript (spoken language + speaker tag)
+        self.boxes.add_to_original(speaker, text, timestamp, language)
         
         # Box 2: Doctor's view (in doctor language)
         # Add if:
@@ -221,4 +238,69 @@ class LangChainRouter:
     def set_languages(self, doctor_lang: str, patient_lang: str):
         """Update language settings"""
         self.doctor_lang = doctor_lang
-        self.patient_lang = patient_lang
+        self.patient_lang = patient_lang    
+    def _detect_speaker(self, speaker_id, language: str) -> str:
+        """
+        Detect speaker label from speaker_id and language
+        Falls back to turn-based detection when speaker_id unavailable
+        """
+        # First priority: Use explicit speaker_id if provided (speaker diarization)
+        if speaker_id is not None and speaker_id != -1:
+            # Register speaker if not seen before
+            if speaker_id not in self.speaker_registry:
+                # Map first speaker to Doctor, second to Patient
+                if len(self.speaker_registry) == 0:
+                    self.speaker_registry[speaker_id] = "Doctor"
+                    print(f"     🎤 Speaker {speaker_id} detected → Doctor (DIARIZATION)")
+                elif len(self.speaker_registry) == 1:
+                    self.speaker_registry[speaker_id] = "Patient"
+                    print(f"     🎤 Speaker {speaker_id} detected → Patient (DIARIZATION)")
+                else:
+                    label = f"Speaker{speaker_id}"
+                    self.speaker_registry[speaker_id] = label
+                    print(f"     🎤 Speaker {speaker_id} detected → {label} (DIARIZATION)")
+            
+            return self.speaker_registry[speaker_id]
+        
+        # Second priority: Use language detection (translation mode only)
+        if not self.same_language and language and language != "unknown":
+            if language == self.doctor_lang:
+                return "Doctor"
+            elif language == self.patient_lang:
+                return "Patient"
+        
+        # FALLBACK: Turn-based detection for same-language mode
+        # Since Soniox speaker diarization might not work in same-language mode,
+        # we alternate speakers on sentence boundaries (endings with . ! ?)
+        if self.current_speaker is None:
+            # First speaker is always Doctor
+            self.current_speaker = "Doctor"
+            self.sentence_count = 1
+            return "Doctor"
+        
+        # Keep current speaker until we see a full sentence (ending with punctuation)
+        return self.current_speaker
+    
+    def check_speaker_change(self, text: str) -> str:
+        """
+        Check if text ends with sentence-ending punctuation
+        If yes, prepare to switch speaker on next token
+        """
+        if not text:
+            return self.current_speaker
+        
+        # Check if text ends with sentence-ending punctuation
+        has_ending_punct = text.rstrip().endswith(('.', '!', '?'))
+        
+        if has_ending_punct and self.current_speaker:
+            # Switch speaker on next turn
+            if self.current_speaker == "Doctor":
+                next_speaker = "Patient"
+            else:
+                next_speaker = "Doctor"
+            
+            self.sentence_count += 1
+            print(f"     🔄 Sentence end detected (#{self.sentence_count}): {self.current_speaker} → {next_speaker}")
+            self.current_speaker = next_speaker
+        
+        return self.current_speaker

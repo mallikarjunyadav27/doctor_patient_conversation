@@ -372,6 +372,25 @@ body {
     background: #cbd5e1;
 }
 
+/* Speaker-specific styling */
+.speaker-doctor {
+    color: #1e40af;
+    font-weight: 600;
+    padding: 8px 0;
+    border-left: 4px solid #2563eb;
+    padding-left: 12px;
+    margin-bottom: 6px;
+}
+
+.speaker-patient {
+    color: #7c2d12;
+    font-weight: 600;
+    padding: 8px 0;
+    border-left: 4px solid #ea580c;
+    padding-left: 12px;
+    margin-bottom: 6px;
+}
+
 /* ============================================================
    EXPORT SECTION
    ============================================================ */
@@ -545,4 +564,9 @@ body {
 .success {
     color: var(--success-green);
     font-weight: 600;
+}
+
+/* Hide boxes when same language */
+.hidden-box {
+    display: none !important;
 }

@@ -22,8 +22,10 @@ def is_indic_char(ch: str) -> bool:
 def smart_join(existing: str, new: str) -> str:
     """
     Join streamed tokens safely:
-    - Preserve Indic grapheme clusters
-    - Preserve English word spacing
+    - New token may already have spaces (e.g., "se e" from Soniox is one token)
+    - Don't add space if new token already starts with space
+    - Don't add space if new token is punctuation
+    - Add space between separate word tokens
     """
     if not existing:
         return new
@@ -31,17 +33,40 @@ def smart_join(existing: str, new: str) -> str:
     if not new:
         return existing
 
+    # If new token already starts with space, just concatenate (it has its own spacing)
+    if new[0] in (' ', '\n', '\t'):
+        return existing + new
+    
     last_char = existing[-1]
     first_char = new[0]
-
-    # Indic scripts → NEVER add space
+    
+    # Indic scripts → NEVER add space (they concatenate naturally)
     if is_indic_char(last_char) or is_indic_char(first_char):
         return existing + new
-
-    # English / Latin scripts
+    
+    # If last char is space, just concatenate (space already there)
+    if last_char in (' ', '\n', '\t'):
+        return existing + new
+    
+    # If first char is punctuation, just concatenate (no space before punctuation)
+    if first_char in ('.', ',', '!', '?', ';', ':'):
+        return existing + new
+    
+    # If last char is punctuation, add space before new word
+    if last_char in ('.', ',', '!', '?', ';', ':'):
+        return existing + ' ' + new
+    
+    # Both last and first are regular characters → ADD SPACE ONLY if they look like separate words
+    # (not if they're part of a single token like "se e" from Soniox)
     if last_char.isalnum() and first_char.isalnum():
-        return existing + " " + new
-
+        # Check if new is a short continuation (1-2 chars) of previous word
+        # Short tokens like "e", "ed", "ing", "er" are likely continuations
+        if len(new) <= 2 and new.lower() in ['a', 'e', 'i', 'o', 'u', 'ed', 'er', 'es', 'en', 'ly', 'ing', 's', 'd', 't', 'n', 'g']:
+            return existing + new  # Don't add space - likely word continuation
+        
+        return existing + ' ' + new
+    
+    # Default: just concatenate
     return existing + new
 
 
@@ -77,18 +102,42 @@ class BoxBuffers:
         self._last_original_speaker = None
         self._last_doctor_speaker = None
         self._last_patient_speaker = None
+        
+        # Buffers for building complete sentences
+        self._original_sentence_buffer = ""
+        self._doctor_sentence_buffer = ""
+        self._patient_sentence_buffer = ""
+        
+        # Track current speaker per box to know when to add tags
+        self._original_current_speaker = None
+        self._doctor_current_speaker = None
+        self._patient_current_speaker = None
 
         self.entries: List[Dict] = []
 
     # -------- Box 1 --------
-    def add_to_original(self, speaker: str, text: str, timestamp: str):
-        if speaker != self._last_original_speaker:
-            if self.original:
-                self.original += "\n"
-            self.original += f"[{speaker}]: "
-            self._last_original_speaker = speaker
-
-        self.original = smart_join(self.original, text)
+    def add_to_original(self, speaker: str, text: str, timestamp: str, language: str = None):
+        """Buffer tokens and display only complete sentences (ends with . ! ?)"""
+        if not text or not speaker:
+            return
+        
+        # Add speaker tag only when speaker changes
+        if speaker != self._original_current_speaker:
+            # If buffer has content, flush it first (speaker changed mid-sentence)
+            if self._original_sentence_buffer and self._original_current_speaker:
+                self.original += f"[{self._original_current_speaker}]: {self._original_sentence_buffer}\n"
+                self._original_sentence_buffer = ""
+            # New speaker starts
+            self._original_current_speaker = speaker
+        
+        # Add token to buffer
+        self._original_sentence_buffer = smart_join(self._original_sentence_buffer, text)
+        
+        # Only flush when sentence is complete (ends with . ! ?)
+        if self._original_sentence_buffer and self._original_sentence_buffer[-1] in '.!?':
+            # Sentence complete - display full sentence
+            self.original += f"[{speaker}]: {self._original_sentence_buffer}\n"
+            self._original_sentence_buffer = ""
 
         self.entries.append({
             "timestamp": timestamp,
@@ -100,13 +149,27 @@ class BoxBuffers:
 
     # -------- Box 2 --------
     def add_to_doctor(self, speaker: str, text: str, timestamp: str, language: str):
-        if speaker != self._last_doctor_speaker:
-            if self.doctor:
-                self.doctor += "\n"
-            self.doctor += f"[{speaker}]: "
-            self._last_doctor_speaker = speaker
-
-        self.doctor = smart_join(self.doctor, text)
+        """Buffer tokens and display only complete sentences (ends with . ! ?)"""
+        if not text or not speaker:
+            return
+        
+        # Add speaker tag only when speaker changes
+        if speaker != self._doctor_current_speaker:
+            # If buffer has content, flush it first (speaker changed mid-sentence)
+            if self._doctor_sentence_buffer and self._doctor_current_speaker:
+                self.doctor += f"[{self._doctor_current_speaker}]: {self._doctor_sentence_buffer}\n"
+                self._doctor_sentence_buffer = ""
+            # New speaker starts
+            self._doctor_current_speaker = speaker
+        
+        # Add token to buffer
+        self._doctor_sentence_buffer = smart_join(self._doctor_sentence_buffer, text)
+        
+        # Only flush when sentence is complete (ends with . ! ?)
+        if self._doctor_sentence_buffer and self._doctor_sentence_buffer[-1] in '.!?':
+            # Sentence complete - display full sentence
+            self.doctor += f"[{speaker}]: {self._doctor_sentence_buffer}\n"
+            self._doctor_sentence_buffer = ""
 
         self.entries.append({
             "timestamp": timestamp,
@@ -118,13 +181,27 @@ class BoxBuffers:
 
     # -------- Box 3 --------
     def add_to_patient(self, speaker: str, text: str, timestamp: str, language: str):
-        if speaker != self._last_patient_speaker:
-            if self.patient:
-                self.patient += "\n"
-            self.patient += f"[{speaker}]: "
-            self._last_patient_speaker = speaker
-
-        self.patient = smart_join(self.patient, text)
+        """Buffer tokens and display only complete sentences (ends with . ! ?)"""
+        if not text or not speaker:
+            return
+        
+        # Add speaker tag only when speaker changes
+        if speaker != self._patient_current_speaker:
+            # If buffer has content, flush it first (speaker changed mid-sentence)
+            if self._patient_sentence_buffer and self._patient_current_speaker:
+                self.patient += f"[{self._patient_current_speaker}]: {self._patient_sentence_buffer}\n"
+                self._patient_sentence_buffer = ""
+            # New speaker starts
+            self._patient_current_speaker = speaker
+        
+        # Add token to buffer
+        self._patient_sentence_buffer = smart_join(self._patient_sentence_buffer, text)
+        
+        # Only flush when sentence is complete (ends with . ! ?)
+        if self._patient_sentence_buffer and self._patient_sentence_buffer[-1] in '.!?':
+            # Sentence complete - display full sentence
+            self.patient += f"[{speaker}]: {self._patient_sentence_buffer}\n"
+            self._patient_sentence_buffer = ""
 
         self.entries.append({
             "timestamp": timestamp,
@@ -149,4 +226,10 @@ class BoxBuffers:
         self._last_original_speaker = None
         self._last_doctor_speaker = None
         self._last_patient_speaker = None
+        self._original_sentence_buffer = ""
+        self._doctor_sentence_buffer = ""
+        self._patient_sentence_buffer = ""
+        self._original_current_speaker = None
+        self._doctor_current_speaker = None
+        self._patient_current_speaker = None
         self.entries.clear()
