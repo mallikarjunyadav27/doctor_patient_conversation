@@ -12,6 +12,13 @@
         <header class="header">
             <h1>🎤 Doctor-Patient Interactive Conversation</h1>
             <p>Real-time Speech-to-Text & Two-Way Translation powered by Soniox</p>
+            
+            <!-- Participant Info Display -->
+            <div id="participant-info" class="participant-info" style="display: none;">
+                <span class="participant-tag">👨‍⚕️ <strong id="current-doctor-name">-</strong></span>
+                <span class="participant-separator">↔</span>
+                <span class="participant-tag">👤 <strong id="current-patient-name">-</strong></span>
+            </div>
         </header>
 
         <!-- Controls Section -->
@@ -66,7 +73,10 @@
 
                 <!-- Main Buttons -->
                 <div class="button-group">
-                    <button id="start-btn" class="btn btn-success" title="Start recording conversation">
+                    <button id="select-participants-btn" class="btn btn-primary" title="Select doctor and patient">
+                        👥 Select Participants
+                    </button>
+                    <button id="start-btn" class="btn btn-success" disabled title="Start recording conversation">
                         🎙️ Start Conversation
                     </button>
                     <button id="stop-btn" class="btn btn-danger" disabled title="Stop recording and save">
@@ -74,6 +84,9 @@
                     </button>
                     <button id="clear-btn" class="btn btn-secondary" title="Clear all boxes">
                         🗑️ Clear
+                    </button>
+                    <button onclick="window.location.href='/medical-summary'" class="btn btn-primary" title="Generate medical summary from text">
+                        📄 Medical Summary Generator
                     </button>
                 </div>
             </div>
@@ -96,6 +109,14 @@
                         📌 Auto-scroll
                     </label>
                 </div>
+            </div>
+        </section>
+
+        <!-- Completion Banner (hidden by default) -->
+        <section id="completion-banner" class="completion-banner" style="display: none;">
+            <div class="banner-content">
+                <span class="banner-icon">✅</span>
+                <span class="banner-text" id="banner-text">Conversation completed. Preparing medical documentation…</span>
             </div>
         </section>
 
@@ -135,6 +156,47 @@
             </div>
         </section>
 
+        <!-- Medical Summary & Conclusion Section (hidden by default) -->
+        <section id="medical-summary-section" class="medical-summary-section" style="display: none;">
+            <div class="summary-container">
+                <div class="summary-panel">
+                    <div class="summary-header" id="clinical-summary-header">
+                        <h2>🩺 Clinical Summary</h2>
+                        <button class="toggle-btn">▼</button>
+                    </div>
+                    <div class="summary-content" id="clinical-summary-content">
+                        <p class="placeholder">Loading...</p>
+                    </div>
+                </div>
+                <div class="summary-panel">
+                    <div class="summary-header" id="conclusion-header">
+                        <h2>📌 Conclusion & Follow-up</h2>
+                        <button class="toggle-btn">▼</button>
+                    </div>
+                    <div class="summary-content" id="conclusion-content">
+                        <p class="placeholder">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PDF Generation Section (hidden by default) -->
+        <section id="pdf-section" class="pdf-section" style="display: none;">
+            <h3>📄 Generate Medical Documentation</h3>
+            <div class="pdf-buttons">
+                <button id="pdf-conversation-btn" class="btn btn-pdf" title="Generate full conversation transcript PDF">
+                    📋 Download Full Conversation
+                </button>
+                <button id="pdf-patient-summary-btn" class="btn btn-pdf" title="Generate patient summary PDF">
+                    👤 Download Patient Summary
+                </button>
+                <button id="pdf-research-btn" class="btn btn-pdf" title="Generate medical research notes PDF">
+                    🔬 Download Medical Research Notes
+                </button>
+            </div>
+            <div id="pdf-status" class="pdf-status"></div>
+        </section>
+
         <!-- Export Section -->
         <section class="export-section">
             <button id="download-btn" class="btn btn-info" disabled title="Download all boxes as JSON">
@@ -154,6 +216,156 @@
                 Real-time Translation & Speaker Diarization
             </p>
         </footer>
+    </div>
+
+    <!-- Participant Selection Modal -->
+    <div id="participant-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>👥 Select Doctor and Patient</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="doctor-search">👨‍⚕️ Search Doctor:</label>
+                    <input 
+                        type="text" 
+                        id="doctor-search" 
+                        class="form-input" 
+                        placeholder="Type doctor's name..."
+                        autocomplete="off"
+                    />
+                    <div id="doctor-suggestions" class="autocomplete-suggestions"></div>
+                    <div id="doctor-info" class="participant-detail"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="patient-search">👤 Search Patient:</label>
+                    <input 
+                        type="text" 
+                        id="patient-search" 
+                        class="form-input" 
+                        placeholder="Type patient's name..."
+                        autocomplete="off"
+                    />
+                    <div id="patient-suggestions" class="autocomplete-suggestions"></div>
+                    <div id="patient-info" class="participant-detail"></div>
+                </div>
+                
+                <div id="modal-error" class="modal-error"></div>
+            </div>
+            
+            <div class="modal-footer">
+                <button id="confirm-participants-btn" class="btn btn-primary" disabled>
+                    ✓ Confirm Selection
+                </button>
+                <button id="cancel-modal-btn" class="btn btn-secondary">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Modal -->
+    <div id="error-modal" class="modal" style="display: none;">
+        <div class="modal-content error-modal-content">
+            <div class="modal-header error-modal-header">
+                <h2>⚠️ <span id="error-modal-title">Error</span></h2>
+                <span class="close-error-modal">&times;</span>
+            </div>
+            
+            <div class="modal-body">
+                <p id="error-modal-message" class="error-message"></p>
+            </div>
+            
+            <div class="modal-footer">
+                <button id="error-modal-retry-btn" class="btn btn-primary" style="display: none;">
+                    🔄 Retry
+                </button>
+                <button id="error-modal-close-btn" class="btn btn-secondary">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Post-Recording Summary Modal -->
+    <div id="summary-modal" class="modal" style="display: none;">
+        <div class="modal-content summary-modal-content">
+            <div class="modal-header">
+                <h2>Doctor-Patient Conversation Segments</h2>
+                <p class="modal-subtitle">Voice Diarization Results</p>
+            </div>
+            
+            <div class="modal-body summary-modal-body">
+                <!-- Participant Info -->
+                <div class="summary-section info-section">
+                    <div class="info-grid">
+                        <div><strong>Doctor:</strong> <span id="summary-doctor-name"></span></div>
+                        <div><strong>Patient:</strong> <span id="summary-patient-name"></span></div>
+                        <div><strong>Processing Date:</strong> <span id="summary-date"></span></div>
+                    </div>
+                </div>
+
+                <!-- Processing Information -->
+                <div class="summary-section">
+                    <h3 class="section-title">Processing Information</h3>
+                    <div class="info-box">
+                        <p><strong>Voice Diarization:</strong> OpenAI-based Speaker Separation</p>
+                        <p><strong>Transcription Engine:</strong> Whisper</p>
+                        <p><strong>Language Majorly Spoken:</strong> <span id="summary-language"></span></p>
+                        <p><strong>Total Segments:</strong> <span id="summary-segments"></span></p>
+                    </div>
+                </div>
+
+                <!-- Conversation Segments -->
+                <div class="summary-section">
+                    <h3 class="section-title">Conversation Segments:</h3>
+                    <div id="conversation-segments" class="segments-container"></div>
+                </div>
+
+                <!-- Complete Transcript (Editable) -->
+                <div class="summary-section">
+                    <h3 class="section-title">Complete Transcript (Editable):</h3>
+                    <div class="warning-banner">Doctor, please edit accordingly</div>
+                    <textarea id="transcript-editor" class="transcript-editor" rows="10"></textarea>
+                </div>
+
+                <!-- Generate Summary Button -->
+                <div class="summary-section center">
+                    <button id="generate-summary-btn" class="btn btn-success btn-lg">
+                        Generate Medical Summary & Recommendations
+                    </button>
+                    <div id="generating-indicator" class="generating-indicator" style="display: none;">
+                        <span class="spinner"></span> Generating with AI...
+                    </div>
+                </div>
+
+                <!-- Medical Summary (Editable) -->
+                <div id="medical-summary-section" class="summary-section" style="display: none;">
+                    <h3 class="section-title">Medical Summary (Editable):</h3>
+                    <div class="warning-banner">Doctor, please review and edit accordingly</div>
+                    <textarea id="summary-editor" class="transcript-editor" rows="8" placeholder="AI-generated medical summary will appear here..."></textarea>
+                </div>
+
+                <!-- Conclusion & Recommendations (Editable) -->
+                <div id="conclusion-section" class="summary-section" style="display: none;">
+                    <h3 class="section-title">Conclusion & Recommendations (Editable):</h3>
+                    <div class="warning-banner">Doctor, please review and edit accordingly</div>
+                    <textarea id="conclusion-editor" class="transcript-editor" rows="8" placeholder="AI-generated conclusion and recommendations will appear here..."></textarea>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button id="save-pdf-btn" class="btn btn-success" disabled>
+                    💾 Save as PDF
+                </button>
+                <button id="close-summary-modal-btn" class="btn btn-secondary">
+                    Close
+                </button>
+            </div>
+        </div>
     </div>
 
     <script src="/static/app.js"></script>
