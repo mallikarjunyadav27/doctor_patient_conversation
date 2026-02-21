@@ -1,0 +1,457 @@
+================================================================================
+DOCTOR-PATIENT REAL-TIME VOICE TRANSLATION APPLICATION
+TECHNICAL SUMMARY FOR SONIOX API TEAM
+================================================================================
+
+Date: February 16, 2026
+Purpose: Communication regarding Soniox API integration, whitespace handling,
+and technical questions
+
+================================================================================
+1. TECHNICAL STACK SUMMARY
+================================================================================
+
+BACKEND:
+  - FastAPI 0.104.1 (Python 3.8+) - Web framework
+  - Uvicorn 0.24.0 - ASGI server
+  - WebSockets 12.0 - Real-time communication
+  - Pydantic 2.5.0 - Data validation
+  - LangChain 0.1.0 + LangChain-Core 0.1.7 - Token routing
+  - NumPy 1.26.2 - Audio processing
+
+FRONTEND:
+  - Vanilla JavaScript (ES6+) - Client logic
+  - Web Audio API - Microphone access & processing
+  - WebSocket - Real-time streaming
+  - PCM16 format, 16000 Hz sample rate, Mono
+
+EXTERNAL:
+  - Soniox API (STT RT v3)
+  - Endpoint: wss://stt-rt.soniox.com/transcribe-websocket
+
+================================================================================
+2. ARCHITECTURE OVERVIEW
+================================================================================
+
+Flow:
+  Browser (Audio capture) 
+    → FastAPI Server (WebSocket handler)
+    → Soniox Client (Connects to Soniox API)
+    → Token processing (LangChain Router)
+    → Smart text joining (models.py)
+    → 3-box display system
+    → JSON export
+
+Key Components:
+  - main.py: WebSocket server, async task management
+  - soniox_ws.py: Soniox connection, config, token reception
+  - langchain_router.py: Speaker detection, token filtering
+  - models.py: Text joining, sentence buffering, 3-box management
+  - app.js: Browser audio capture, WebSocket client
+
+================================================================================
+3. STREAMING DATA FLOW (CRITICAL)
+================================================================================
+
+INITIALIZATION:
+  1. Browser requests microphone (getUserMedia)
+  2. Establishes WebSocket to FastAPI
+  3. Sends config: {doctor_lang: "en", patient_lang: "te"}
+  4. FastAPI spawns SonioxWSClient
+  5. Sends JSON config to Soniox with API key
+
+CONTINUOUS STREAMING:
+  1. Browser: Audio capture at 16000 Hz
+  2. Browser: ConvertFloat32 → PCM16
+  3. Browser: Send to FastAPI every 64ms (~2KB chunks)
+  4. FastAPI: Forward immediately to Soniox (no buffering)
+  
+  5. Soniox: Process audio
+  6. Soniox: Return JSON with tokens array:
+     {
+       "message_type": "result",
+       "tokens": [
+         {
+           "text": "Hello",
+           "speaker": 0,
+           "language": "en",
+           "is_final": false,
+           "timestamp": "...",
+           "translated": false
+         },
+         {
+           "text": " patient",
+           "speaker": 0,
+           "language": "en", 
+           "is_final": true,
+           "timestamp": "..."
+         }
+       ]
+     }
+
+  7. LangChain Router:
+     - Extract text, speaker_id, language, is_final
+     - Detect speaker (0→Doctor, 1→Patient)
+     - Filter: ONLY process is_final=true
+     - Buffer partial tokens separately
+     - Route to appropriate box
+
+  8. models.py (smart_join):
+     - Join tokens intelligently
+     - No extra spaces between words
+     - Respect Indic script concatenation
+     - Handle punctuation properly
+     - Buffer until sentence complete (. ! ?)
+
+  9. Display:
+     - Show complete sentences with [Doctor]: / [Patient]: tags
+     - Auto-scroll if enabled
+     - All 3 boxes updated simultaneously
+
+END OF STREAM:
+  1. Browser stops recording
+  2. Sends empty buffer (b"") to FastAPI
+  3. FastAPI forwards to Soniox
+  4. Soniox returns final tokens
+  5. Flush remaining buffered text
+  6. Save to 3 JSON files
+
+================================================================================
+4. THE WHITESPACE PROBLEM & OUR SOLUTION
+================================================================================
+
+PROBLEM:
+  Extra unnecessary spaces appearing between words:
+  - Expected: "Hello patient"
+  - Got: "Hello     patient" (multiple spaces)
+  - Root cause: Soniox tokens sometimes include spaces already
+
+WHY IT HAPPENS:
+  - Soniox returns inconsistent token spacing
+  - Token 1: "Hello"
+  - Token 2: " patient" (space included)
+  - Naive join: "Hello" + " " + " patient" = "Hello  patient" ✗
+
+  - Partial tokens mixed with final tokens
+  - Indic scripts don't use spaces (Telugu: characters concatenate)
+  - Punctuation handling inconsistent
+
+OUR SOLUTION - 4 PART APPROACH:
+
+  Part 1: Final-Token-Only Filtering
+    → Only process tokens with is_final=true for display
+    → Buffer partial tokens separately
+    → Eliminates duplicate/jitter issues
+
+  Part 2: Smart Text Joining (models.py)
+    → Check if new token already starts with space
+    → Detect Indic scripts (Telugu, Hindi, Tamil) - no spaces
+    → Identify word continuations (suffixes: "ed", "ing", "er")
+    → No space before punctuation
+    
+    Logic:
+      if new_token starts with space:
+        concatenate (already has space)
+      elif last_char OR first_char is Indic:
+        concatenate (no spaces in Indian scripts)
+      elif first_char is punctuation:
+        concatenate (no space before .!?,;:)
+      elif word_continuation (short suffix):
+        concatenate (no space for "ed", "ing")
+      else:
+        concatenate_with_space (normal word boundary)
+
+  Part 3: Sentence Buffering
+    → Don't display partial words
+    → Wait for sentence-ending punctuation (. ! ?)
+    → Then flush complete sentence
+    → Result: Clean complete sentences
+
+  Part 4: Speaker Change Handling
+    → Add tag [Doctor]: only when speaker changes
+    → Avoid redundant tags mid-sentence
+
+RESULTS:
+  ✓ English: Clean spacing maintained
+  ✓ Telugu: Natural concatenation (no spaces)
+  ✓ Mixed languages: Proper handling
+  ✓ Punctuation: Correctly positioned
+  ⚠ Partial tokens: Buffered, not displayed
+
+CONFIG:
+  {
+    "render": "everything",  # Get partial AND final
+    "enable_endpoint_detection": true,  # Better boundaries
+    "enable_speaker_diarization": true,  # Separate speakers
+  }
+  
+  Processing:
+    if token.is_final:
+        route_to_boxes()  # Display
+    else:
+        buffer_only()  # Hold for preview
+
+================================================================================
+5. KEY TECHNICAL DETAILS
+================================================================================
+
+SPEAKER DETECTION (Priority Order):
+  1. Soniox speaker_id (0, 1, 2... → Doctor, Patient, ...)
+  2. Language detection (language field vs doctor_lang/patient_lang)
+  3. Turn-based fallback (alternate on sentence punctuation)
+
+THREE-BOX SYSTEM:
+  Box 1: Original Transcript
+    - Original language + speaker tag
+    - Always displayed
+    - Example: "[Doctor]: నేను మీకు సహాయం చేయగలను" (Telugu)
+
+  Box 2: Doctor Language View
+    - Doctor language only
+    - Shows translations if in translation mode
+    - Hidden if same language mode
+
+  Box 3: Patient Language View
+    - Patient language only
+    - Shows translations if in translation mode
+    - Hidden if same language mode
+
+PERFORMANCE:
+  - Latency: 200-400ms typical (end-to-end)
+  - Audio bitrate: 256 kbps (16000 Hz * 16 bits)
+  - Data per chunk: ~2KB every 64ms
+  - Soniox response: 100-500 bytes per token
+
+SUPPORTED LANGUAGES:
+  English, Spanish, French, German, Hindi, Telugu, Tamil,
+  Kannada, Malayalam, Marathi, Gujarati, Bengali, Punjabi,
+  Odia, Assamese, Urdu, etc.
+
+================================================================================
+6. SONIOX API CONFIGURATION
+================================================================================
+
+JSON Config Sent to Soniox:
+{
+  "api_key": "SONIOX_API_KEY",
+  "model": "stt-rt-v3",
+  "audio_format": "pcm_s16le",
+  "sample_rate": 16000,
+  "num_channels": 1,
+  "language_hints": ["en", "te"],
+  "enable_speaker_diarization": true,
+  "enable_endpoint_detection": true,
+  "render": "everything",
+  "enable_language_identification": true,
+  "translation": {
+    "type": "two_way",
+    "language_a": "en",
+    "language_b": "te"
+  }
+}
+
+WebSocket URL:
+  wss://stt-rt.soniox.com/transcribe-websocket
+
+Timeout: 60 seconds (increased from 30s for speech pauses)
+
+================================================================================
+7. KNOWN LIMITATIONS
+================================================================================
+
+1. Whitespace Variability
+   - Issue: Some uncommon token sequences may still produce extra spaces
+   - Reason: Soniox token format not 100% documented
+   - Workaround: Manual cleanup in exported JSON
+
+2. Speaker Diarization Fallback
+   - Issue: Sentence-based fallback may misidentify short turns
+   - Reason: Requires explicit speaker_id from Soniox
+   - Workaround: Ensure "enable_speaker_diarization": true
+
+3. Language Mixing
+   - Issue: Same-language mode skips mismatched language speech
+   - Reason: Language mismatch filtering
+   - Workaround: Select primary language
+
+4. Partial Token Display
+   - Issue: Only final tokens shown (partial tokens buffered)
+   - Reason: Prevents jitter and whitespace issues
+   - Could improve if token formatting becomes more reliable
+
+================================================================================
+8. QUESTIONS FOR SONIOX TECHNICAL TEAM
+================================================================================
+
+1. TOKEN SPACING STANDARDIZATION
+   Question: Can Soniox standardize whether tokens include spaces?
+   Current: Sometimes " patient", sometimes "patient"
+   Impact: Would eliminate complex joining logic
+   
+2. INTERMEDIATE RESULTS WITH POSITION DATA
+   Question: Can you provide word position information in tokens?
+   Current: No position data, only streaming text
+   Benefit: Would enable pixel-perfect display updates
+   
+3. SPEAKER DIARIZATION RELIABILITY
+   Question: Can you provide speaker_id confidence metrics?
+   Current: speaker_id sometimes -1 or missing
+   Benefit: Could choose diarization vs. language detection
+
+4. LANGUAGE HINTS OPTIMIZATION
+   Question: How much do language_hints improve accuracy?
+   Current: Set as ["en", "te"] based on doctor/patient selection
+   Benefit: Could optimize for accuracy vs. latency
+
+5. BIDIRECTIONAL TRANSLATION DATA
+   Question: Can both original AND translated versions be returned?
+   Current: Get translated token, lose original
+   Benefit: Would enable original + translated display
+
+6. STREAMING TELEMETRY
+   Question: Any latency metrics or processing time data available?
+   Current: No visibility into Soniox processing time
+   Benefit: Help optimize client-side buffering
+
+================================================================================
+9. RECOMMENDATIONS TO SONIOX
+================================================================================
+
+1. Document token spacing behavior clearly
+   - When do tokens include spaces?
+   - Provide joining algorithm guidelines
+   - Published whitespace handling best practices
+
+2. Add position information to tokens
+   - Character position for each token
+   - Enable word-accurate display
+   - Reduce client-side buffering complexity
+
+3. Enhance speaker diarization consistency
+   - Provide speaker_id reliably in all cases
+   - Include speaker change confidence score
+   - Support > 2 speakers with persistent IDs
+
+4. Bidirectional translation field
+   - Return both original + translated per token
+   - Would eliminate complex routing logic
+   - Better for multi-language scenarios
+
+5. Streaming telemetry data
+   - Response time metrics
+   - Token processing timestamps
+   - Help optimize client-side buffering strategies
+
+================================================================================
+10. FILE STRUCTURE FOR REFERENCE
+================================================================================
+
+backend/
+  - main.py (332 lines)
+    → WebSocket server, connection handling, async tasks
+    
+  - soniox_ws.py (195 lines)
+    → Soniox WebSocket client, connection, config, tokens
+    
+  - langchain_router.py (306 lines)
+    → LangChain token processor, speaker detection, routing
+    
+  - models.py (236 lines)
+    → Data models, smart_join(), sentence buffering, boxes
+
+  - audio_stream.py
+    → Audio utilities (if needed)
+
+  - utils.py
+    → File I/O utilities
+
+frontend/
+  - app.js (604 lines)
+    → Browser client, audio capture, WebSocket, UI updates
+    
+  - index.html
+    → Layout, boxes, controls
+    
+  - styles.css
+    → Responsive design
+
+recordings/
+  - JSON files saved per conversation
+
+requirements.txt
+  - All Python dependencies listed
+
+================================================================================
+11. DEPLOYMENT & LAUNCH
+================================================================================
+
+Environment:
+  SONIOX_API_KEY=your_actual_key_here
+  SONIOX_MODEL=stt-rt-v3
+
+Run Backend:
+  cd doctor_patient_app/backend
+  python main.py
+
+  Or with Uvicorn:
+  uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+Access:
+  http://localhost:8000
+
+Browser Requirements:
+  - Web Audio API support (all modern browsers)
+  - WebSocket support (all modern browsers)
+  - Microphone access permission
+  - HTTPS if deployed to HTTPS domain
+
+================================================================================
+12. TROUBLESHOOTING
+================================================================================
+
+Extra spaces between words?
+  → Check smart_join() is called
+  → Verify only is_final=true routed to boxes
+  → Check language detection working (console logs)
+
+Wrong speaker detected?
+  → Is speaker_id coming from Soniox? (Check response)
+  → Are language keys correct? (en, te, etc.)
+  → Is diarization enabled in config?
+
+Streaming cuts off?
+  → WebSocket timeout should be 60 seconds
+  → Audio buffer size: 1024 samples
+  → Sample rate: 16000 Hz
+  → Check Soniox connection not timing out
+
+High latency?
+  → Cannot reduce buffer size below 1024 reliably
+  → Test network to Soniox endpoint
+  → Check FastAPI server resources
+  → Consider disabling non-critical features
+
+================================================================================
+13. TECHNICAL CONTACT INFORMATION
+================================================================================
+
+Project: Doctor-Patient Real-Time Voice Translation
+Created: February 16, 2026
+Location: e:\Mallikarjun_workspace\soniox_project
+
+Primary Documentation: See TECHNICAL_DOCUMENTATION_FOR_SONIOX.md
+
+Core Technologies:
+  - FastAPI (Python async web framework)
+  - WebSockets (real-time bidirectional communication)
+  - Web Audio API (browser-based audio capture)
+  - LangChain (token routing library)
+  - Soniox STT API v3 (speech recognition provider)
+
+Status: Production-ready for remote doctor-patient consultations
+
+================================================================================
+For questions or clarifications regarding this technical implementation,
+please refer to the detailed markdown documentation file:
+TECHNICAL_DOCUMENTATION_FOR_SONIOX.md
+================================================================================

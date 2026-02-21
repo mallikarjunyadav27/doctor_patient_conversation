@@ -99,7 +99,7 @@ body {
     font-weight: 700;
     color: var(--text-dark);
     margin-bottom: 8px;
-    font-size: 0.95em;
+    font-size: calc(0.95em + 2px);
 }
 
 .language-control select {
@@ -107,7 +107,7 @@ body {
     padding: 12px 14px;
     border: 2px solid var(--border-color);
     border-radius: 8px;
-    font-size: 0.95em;
+    font-size: calc(0.95em + 2px);
     background: white;
     cursor: pointer;
     transition: all 0.3s ease;
@@ -132,7 +132,7 @@ body {
 
 .btn {
     padding: 12px 28px;
-    font-size: 0.95em;
+    font-size: calc(0.95em + 2px);
     font-weight: 700;
     border: none;
     border-radius: 8px;
@@ -221,14 +221,14 @@ body {
 .status-value {
     font-weight: 700;
     color: var(--primary-blue);
-    font-size: 1em;
+    font-size: calc(1em + 2px);
 }
 
 .timer-value {
     font-family: 'Courier New', monospace;
     font-weight: 800;
     color: var(--success-green);
-    font-size: 1.2em;
+    font-size: calc(1.2em + 2px);
 }
 
 .status-value.recording {
@@ -339,7 +339,7 @@ body {
     flex: 1;
     padding: 20px;
     overflow-y: auto;
-    font-size: 0.95em;
+    font-size: calc(0.95em + 2px);
     line-height: 1.7;
     white-space: pre-wrap;
     word-wrap: break-word;
