@@ -294,17 +294,18 @@
     <div id="summary-modal" class="modal" style="display: none;">
         <div class="modal-content summary-modal-content">
             <div class="modal-header">
-                <h2>Doctor-Patient Conversation Segments</h2>
-                <p class="modal-subtitle">Voice Diarization Results</p>
+                <h2>PCES - Doctor - Patient Conversation Segments</h2>
             </div>
             
             <div class="modal-body summary-modal-body">
                 <!-- Participant Info -->
                 <div class="summary-section info-section">
-                    <div class="info-grid">
-                        <div><strong>Doctor:</strong> <span id="summary-doctor-name"></span></div>
-                        <div><strong>Patient:</strong> <span id="summary-patient-name"></span></div>
-                        <div><strong>Processing Date:</strong> <span id="summary-date"></span></div>
+                    <div class="info-single-line">
+                        <strong>Doctor:</strong> <span id="summary-doctor-name"></span>
+                        <span class="separator">|</span>
+                        <strong>Patient:</strong> <span id="summary-patient-name"></span>
+                        <span class="separator">|</span>
+                        <strong>Processing Date:</strong> <span id="summary-date"></span>
                     </div>
                 </div>
 
@@ -312,10 +313,8 @@
                 <div class="summary-section">
                     <h3 class="section-title">Processing Information</h3>
                     <div class="info-box">
-                        <p><strong>Voice Diarization:</strong> OpenAI-based Speaker Separation</p>
-                        <p><strong>Transcription Engine:</strong> Whisper</p>
-                        <p><strong>Language Majorly Spoken:</strong> <span id="summary-language"></span></p>
-                        <p><strong>Total Segments:</strong> <span id="summary-segments"></span></p>
+                        <p><strong>Voice Diarization:</strong> OpenAI-based Speaker Separation&nbsp;&nbsp;&nbsp;&nbsp;<strong>Language Majorly Spoken:</strong> <span id="summary-language"></span></p>
+                        <p><strong>Transcription Engine:</strong> Whisper&nbsp;&nbsp;&nbsp;&nbsp;<strong>Total Segments:</strong> <span id="summary-segments"></span></p>
                     </div>
                 </div>
 
@@ -326,14 +325,14 @@
                 </div>
 
                 <!-- Complete Transcript (Editable) -->
-                <div class="summary-section">
+                <div class="summary-section compact-spacing">
                     <h3 class="section-title">Complete Transcript (Editable):</h3>
                     <div class="warning-banner">Doctor, please edit accordingly</div>
                     <textarea id="transcript-editor" class="transcript-editor" rows="10"></textarea>
                 </div>
 
                 <!-- Generate Summary Button -->
-                <div class="summary-section center">
+                <div class="summary-section center compact-spacing">
                     <button id="generate-summary-btn" class="btn btn-success btn-lg">
                         Generate Medical Summary & Recommendations
                     </button>
@@ -343,21 +342,21 @@
                 </div>
 
                 <!-- Medical Summary (Editable) -->
-                <div id="medical-summary-section" class="summary-section" style="display: none;">
+                <div id="medical-summary-section" class="summary-section compact-spacing" style="display: none;">
                     <h3 class="section-title">Medical Summary (Editable):</h3>
                     <div class="warning-banner">Doctor, please review and edit accordingly</div>
                     <textarea id="summary-editor" class="transcript-editor" rows="8" placeholder="AI-generated medical summary will appear here..."></textarea>
                 </div>
 
                 <!-- Conclusion & Recommendations (Editable) -->
-                <div id="conclusion-section" class="summary-section" style="display: none;">
-                    <h3 class="section-title">Conclusion & Recommendations (Editable):</h3>
+                <div id="conclusion-section" class="summary-section compact-spacing" style="display: none;">
+                    <h3 class="section-title">Conclusions & Recommendations (Editable):</h3>
                     <div class="warning-banner">Doctor, please review and edit accordingly</div>
                     <textarea id="conclusion-editor" class="transcript-editor" rows="8" placeholder="AI-generated conclusion and recommendations will appear here..."></textarea>
                 </div>
             </div>
             
-            <div class="modal-footer">
+            <div class="modal-footer compact-footer">
                 <button id="save-pdf-btn" class="btn btn-success" disabled>
                     💾 Save as PDF
                 </button>

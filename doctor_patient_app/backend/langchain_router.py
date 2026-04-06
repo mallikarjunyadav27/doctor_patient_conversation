@@ -226,8 +226,8 @@ class LangChainRouter:
         """Get raw box content for export"""
         return (
             self.boxes.original,
-            self.boxes.doctor_lang,
-            self.boxes.patient_lang
+            self.boxes.doctor,
+            self.boxes.patient
         )
     
     def reset(self):
