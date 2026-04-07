@@ -19,7 +19,7 @@ fi
 # Check if virtual environment exists
 if [ ! -d "venv" ]; then
     echo "[*] Creating virtual environment..."
-    python3 -m venv venv
+    python3.12 -m venv venv
     if [ $? -ne 0 ]; then
         echo "[ERROR] Failed to create virtual environment"
         exit 1
@@ -32,8 +32,7 @@ source venv/bin/activate
 
 # Install requirements
 echo "[*] Checking dependencies..."
-pip install -q --upgrade pip
-pip install -q -r requirements.txt
+uv pip install  -r requirements.txt
 
 # Check for .env file
 if [ ! -f ".env" ]; then

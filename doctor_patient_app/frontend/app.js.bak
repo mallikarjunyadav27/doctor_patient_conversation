@@ -103,24 +103,6 @@ class DoctorPatientApp {
         this.errorModalRetryBtn = document.getElementById("error-modal-retry-btn");
         this.errorModalCloseBtn = document.getElementById("error-modal-close-btn");
         this.closeErrorModal = document.querySelector(".close-error-modal");
-        
-        // Summary modal elements
-        this.summaryModal = document.getElementById("summary-modal");
-        this.closeSummaryModalBtn = document.getElementById("close-summary-modal-btn");
-        this.summaryDoctorName = document.getElementById("summary-doctor-name");
-        this.summaryPatientName = document.getElementById("summary-patient-name");
-        this.summaryDate = document.getElementById("summary-date");
-        this.summaryLanguage = document.getElementById("summary-language");
-        this.summarySegments = document.getElementById("summary-segments");
-        this.conversationSegments = document.getElementById("conversation-segments");
-        this.transcriptEditor = document.getElementById("transcript-editor");
-        this.generateSummaryBtn = document.getElementById("generate-summary-btn");
-        this.generatingIndicator = document.getElementById("generating-indicator");
-        this.medicalSummaryModalSection = document.getElementById("medical-summary-section");
-        this.conclusionModalSection = document.getElementById("conclusion-section");
-        this.summaryEditor = document.getElementById("summary-editor");
-        this.conclusionEditor = document.getElementById("conclusion-editor");
-        this.savePdfBtn = document.getElementById("save-pdf-btn");
     }
     
     /**
@@ -152,13 +134,11 @@ class DoctorPatientApp {
         this.doctorLangSelect.addEventListener("change", (e) => {
             this.doctorLang = e.target.value;
             this.boxDoctorLang.textContent = this.getLangName(this.doctorLang);
-            this.updateBoxVisibility();
         });
         
         this.patientLangSelect.addEventListener("change", (e) => {
             this.patientLang = e.target.value;
             this.boxPatientLang.textContent = this.getLangName(this.patientLang);
-            this.updateBoxVisibility();
         });
         
         // PDF generation buttons
@@ -168,19 +148,6 @@ class DoctorPatientApp {
         
         // Summary panel toggle
         document.getElementById("clinical-summary-header").addEventListener("click", (e) => this.toggleSummaryPanel(e.currentTarget));
-        document.getElementById("conclusion-header").addEventListener("click", (e) => this.toggleSummaryPanel(e.currentTarget));
-        
-        // Summary modal events
-        this.closeSummaryModalBtn.addEventListener("click", () => this.closeSummaryModal());
-        this.generateSummaryBtn.addEventListener("click", () => this.generateMedicalSummary());
-        this.savePdfBtn.addEventListener("click", () => this.savePdfFromModal());
-        
-        // Close summary modal when clicking outside
-        window.addEventListener("click", (e) => {
-            if (e.target === this.summaryModal) {
-                this.closeSummaryModal();
-            }
-        });
         document.getElementById("conclusion-header").addEventListener("click", (e) => this.toggleSummaryPanel(e.currentTarget));
         
         // Error modal events
@@ -542,30 +509,19 @@ class DoctorPatientApp {
             this.mediaStream.getTracks().forEach(track => track.stop());
         }
         
+        // Close WebSocket
+        if (this.ws) {
+            this.ws.close();
+        }
+        
         // Stop timer
         this.stopTimer();
         
         // Freeze UI - disable all controls
         this.freezeConversation();
         
-        // Close WebSocket immediately
-        if (this.ws) {
-            this.ws.close();
-        }
-        
-        // Wait for backend to save files (2 seconds should be enough)
-        console.log("⏳ Waiting for backend to save conversation...");
-        setTimeout(async () => {
-            try {
-                // Show summary modal
-                await this.showSummaryModal();
-            } catch (error) {
-                console.error("❌ Error showing summary modal:", error);
-                alert(`Failed to open summary dialog: ${error.message}`);
-                this.completionBanner.style.display = "none";
-                this.clearBtn.disabled = false;
-            }
-        }, 2000);  // Wait 2 seconds for backend to finish saving
+        // Trigger post-recording processing
+        await this.processPostRecording();
     }
     
     /**
@@ -613,12 +569,6 @@ class DoctorPatientApp {
                     
                     // Update boxes with latest data
                     if (data.boxes) {
-                        console.log("📦 Received boxes update:", {
-                            original_length: data.boxes.original?.length,
-                            doctor_length: data.boxes.doctor?.length,
-                            patient_length: data.boxes.patient?.length,
-                            original_preview: data.boxes.original?.substring(0, 100)
-                        });
                         this.updateBoxes(data.boxes, data.same_language);
                     }
                     
@@ -631,20 +581,10 @@ class DoctorPatientApp {
                     }
                 } else if (data.type === "update") {
                     // Legacy update format
-                    console.log("📦 Received legacy update");
                     this.updateBoxes(data.boxes);
                     this.conversationData.entries.push(...(data.tokens || []));
                 } else if (data.type === "saved") {
                     console.log("✓ Conversation saved to files");
-                    
-                    // Store the conversation text sent from backend
-                    if (data.conversation_text) {
-                        console.log("📥 Received conversation text from save event:", data.conversation_text.length, "chars");
-                        this.conversationData.original = data.conversation_text;
-                        this.conversationData.doctor = data.doctor_text || "";
-                        this.conversationData.patient = data.patient_text || "";
-                        console.log("💾 Stored conversation data for translation");
-                    }
                 }
             } catch (error) {
                 console.error("Error processing WebSocket message:", error);
@@ -775,18 +715,14 @@ class DoctorPatientApp {
             this.boxDoctor.innerHTML = doctorHTML;
             this.boxPatient.innerHTML = patientHTML;
             
-            // Hide boxes 2 & 3 when both languages are the same
+            // Hide boxes 2 & 3 if same language using CSS class
             const doctorContainer = document.getElementById("box-doctor-container");
             const patientContainer = document.getElementById("box-patient-container");
             
-            const sameLanguage = this.doctorLang === this.patientLang;
-            
             if (sameLanguage) {
-                // Same language: only show Box #1
                 doctorContainer.classList.add("hidden-box");
                 patientContainer.classList.add("hidden-box");
             } else {
-                // Different languages: show all boxes for translation
                 doctorContainer.classList.remove("hidden-box");
                 patientContainer.classList.remove("hidden-box");
             }
@@ -808,26 +744,6 @@ class DoctorPatientApp {
                 box.classList.add("updating");
                 setTimeout(() => box.classList.remove("updating"), 300);
             });
-        }
-    }
-    
-    /**
-     * Update box visibility based on language selection
-     */
-    updateBoxVisibility() {
-        const doctorContainer = document.getElementById("box-doctor-container");
-        const patientContainer = document.getElementById("box-patient-container");
-        
-        const sameLanguage = this.doctorLang === this.patientLang;
-        
-        if (sameLanguage) {
-            // Same language: only show Box #1
-            doctorContainer.classList.add("hidden-box");
-            patientContainer.classList.add("hidden-box");
-        } else {
-            // Different languages: show all boxes for translation
-            doctorContainer.classList.remove("hidden-box");
-            patientContainer.classList.remove("hidden-box");
         }
     }
     
@@ -1011,9 +927,9 @@ class DoctorPatientApp {
         this.statusText.textContent = "Processing...";
         this.statusText.classList.remove("recording");
         
-        // Show completion banner temporarily
+        // Show completion banner
         this.completionBanner.style.display = "block";
-        this.bannerText.textContent = "✅ Conversation completed. Opening summary...";
+        this.bannerText.textContent = "Conversation completed. Preparing medical documentation…";
         
         this.conversationCompleted = true;
         console.log("🔒 Conversation frozen");
@@ -1181,728 +1097,21 @@ class DoctorPatientApp {
      */
     async generatePDF(pdfType) {
         try {
-            // Validate metadata
-            if (!this.validateMetadata()) {
-                return;
-            }
-            
-            // Disable button and show status
-            const button = pdfType === "conversation" ? this.pdfConversationBtn :
-                          pdfType === "patient_summary" ? this.pdfPatientSummaryBtn :
-                          this.pdfResearchBtn;
-            
-            button.disabled = true;
-            this.pdfStatus.textContent = `Generating ${pdfType} PDF...`;
-            this.pdfStatus.className = "pdf-status processing";
-            
-            // Prepare metadata
-            const metadata = {
-                doctor_name: this.selectedDoctor?.full_name || "Doctor",
-                patient_name: this.selectedPatient?.full_name || "Patient",
-                patient_id: this.selectedPatient?.patient_id || null,
-                session_date: new Date().toISOString(),
-                duration: this.conversationDuration,
-                language: this.postRecordingData?.language || this.patientLang,
-                translated: this.postRecordingData?.translated || false
-            };
-            
-            // Prepare payload based on PDF type
-            const payload = {
-                pdf_type: pdfType,
-                metadata: metadata
-            };
-            
-            if (pdfType === "conversation") {
-                payload.transcript = this.postRecordingData?.transcript || [];
-                payload.raw_transcript = this.postRecordingData?.raw_transcript || this.conversationData.original;
-            } else if (pdfType === "patient_summary") {
-                payload.summary = this.postRecordingData?.summary || "";
-                payload.conclusion = this.postRecordingData?.conclusion || "";
-                payload.transcript = this.postRecordingData?.transcript || [];
-            } else if (pdfType === "research") {
-                payload.summary = this.postRecordingData?.summary || "";
-                payload.conclusion = this.postRecordingData?.conclusion || "";
-                payload.patient_problem = this.postRecordingData?.summary || "Medical consultation";
-            }
-            
-            // Call backend to generate and upload PDF
-            const response = await fetch("/api/generate_pdf", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            });
-            
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error(data.error || "PDF generation failed");
-            }
-            
-            // Show success with Azure URL
-            this.pdfStatus.textContent = `✅ PDF uploaded to Azure: ${data.blob_url}`;
-            this.pdfStatus.className = "pdf-status success";
-            
-            // Re-enable button after delay
-            setTimeout(() => {
-                button.disabled = false;
-                this.pdfStatus.textContent = "";
-            }, 5000);
-            
-            console.log(`✅ ${pdfType} PDF generated:`, data.blob_url);
-            
-        } catch (error) {
-            console.error(`❌ PDF generation error (${pdfType}):`, error);
-            this.pdfStatus.textContent = `❌ Error: ${error.message}`;
-            this.pdfStatus.className = "pdf-status error";
-            
-            // Re-enable button
-            setTimeout(() => {
-                if (pdfType === "conversation") this.pdfConversationBtn.disabled = false;
-                else if (pdfType === "patient_summary") this.pdfPatientSummaryBtn.disabled = false;
-                else this.pdfResearchBtn.disabled = false;
-            }, 3000);
-        }
-    }
-    
-    /**
-     * Show summary modal after recording stops
-     */
-    async showSummaryModal() {
-        console.log("=".repeat(80));
-        console.log("📋📋📋 SUMMARY MODAL OPENING - START 📋📋📋");
-        console.log("=".repeat(80));
-        
-        console.log("📊 Current conversationData state:");
-        console.log("   - original length:", this.conversationData.original?.length);
-        console.log("   - original content:", this.conversationData.original);
-        console.log("   - doctor length:", this.conversationData.doctor?.length);
-        console.log("   - patient length:", this.conversationData.patient?.length);
-        
-        // DEBUG: Check what's in the box-original DOM element
-        console.log("=".repeat(80));
-        console.log("🔍 Checking box-original DOM element:");
-        console.log("=".repeat(80));
-        if (this.boxOriginal) {
-            console.log("   ✅ Element exists:", !!this.boxOriginal);
-            console.log("   📏 innerHTML length:", this.boxOriginal.innerHTML?.length);
-            console.log("   📏 textContent length:", this.boxOriginal.textContent?.length);
-            console.log("   📝 textContent:");
-            console.log(this.boxOriginal.textContent);
-            console.log("   🎨 innerHTML preview:");
-            console.log(this.boxOriginal.innerHTML?.substring(0, 500));
-        } else {
-            console.error("   ❌ boxOriginal element is NULL!");
-        }
-        console.log("=".repeat(80));
-        
-        try {
-            // Check if modal elements exist
-            if (!this.summaryModal) {
-                throw new Error("Summary modal element not found");
-            }
-            
-            // Populate participant info
-            if (this.summaryDoctorName) {
-                this.summaryDoctorName.textContent = this.selectedDoctor?.full_name || "Doctor";
-            }
-            if (this.summaryPatientName) {
-                this.summaryPatientName.textContent = this.selectedPatient?.full_name || "Patient";
-            }
-            
-            const now = new Date();
-            if (this.summaryDate) {
-                this.summaryDate.textContent = now.toLocaleString();
-            }
-            
-            if (this.summaryLanguage) {
-                this.summaryLanguage.textContent = this.getLangName(this.doctorLang);
-            }
-            if (this.summarySegments) {
-                // Count actual segments by parsing the conversation text
-                const segments = this.parseConversationSegments();
-                this.summarySegments.textContent = segments.length;
-            }
-            
-            // Populate transcript editor with loading state FIRST
-            const needsTranslation = this.doctorLang !== 'en' || this.patientLang !== 'en';
-            if (this.transcriptEditor) {
-                if (needsTranslation) {
-                    // Will be populated after translation
-                    this.transcriptEditor.value = "Translating to English...";
-                } else {
-                    this.transcriptEditor.value = this.getTranscriptText();
-                }
-            }
-            
-            // Populate conversation segments
-            if (this.conversationSegments) {
-                if (needsTranslation) {
-                    // Show loading state
-                    this.conversationSegments.innerHTML = '<div style="padding: 20px; text-align: center; color: #3b82f6;"><div class="spinner"></div> Translating to English...</div>';
-                    
-                    // Translate segments to English (this will also update transcript editor)
-                    await this.translateAndPopulateSegments();
-                } else {
-                    this.populateConversationSegments();
-                }
-            }
-            
-            // Show sections immediately in the modal
-            if (this.medicalSummaryModalSection) {
-                this.medicalSummaryModalSection.style.display = "block";
-            }
-            if (this.conclusionModalSection) {
-                this.conclusionModalSection.style.display = "block";
-            }
-            if (this.savePdfBtn) {
-                this.savePdfBtn.disabled = true;
-            }
-            
-            // Hide banner since we're showing modal
-            if (this.completionBanner) {
-                this.completionBanner.style.display = "none";
-            }
-            
-            // Show modal
-            this.summaryModal.style.display = "block";
-            
-            console.log("✅ Summary modal opened successfully");
-            
-        } catch (error) {
-            console.error("❌ Error in showSummaryModal:", error);
-            console.error("Modal elements check:", {
-                summaryModal: !!this.summaryModal,
-                summaryDoctorName: !!this.summaryDoctorName,
-                transcriptEditor: !!this.transcriptEditor
-            });
-            throw error;
-        }
-    }
-    
-    /**
-     * Close summary modal
-     */
-    closeSummaryModal() {
-        this.summaryModal.style.display = "none";
-    }
-    
-    /**
-     * Translate and populate segments to English
-     */
-    async translateAndPopulateSegments() {
-        try {
-            // Read directly from the displayed box
-            const transcriptText = this.getTranscriptText();
-            
-            console.log("📝 Transcript text to translate:");
-            console.log("   Length:", transcriptText?.length);
-            console.log("   Preview:", transcriptText?.substring(0, 300));
-            
-            if (!transcriptText || transcriptText.trim() === "" || transcriptText === "[No content]" || transcriptText.length < 10) {
-                throw new Error("No conversation content available to translate");
-            }
-            
-            console.log("🌐 Translating conversation to English...");
-            
-            // Call backend to translate
-            const response = await fetch("/api/translate_to_english", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    text: transcriptText,
-                    source_language: this.doctorLang !== 'en' ? this.doctorLang : this.patientLang
-                })
-            });
-            
-            const data = await response.json();
-            
-            console.log("📥 Translation response:", data);
-            
-            if (!data.success) {
-                throw new Error(data.error || "Translation failed");
-            }
-            
-            // Store translated text
-            this.translatedTranscript = data.translated_text;
-            
-            console.log("✅ Translated text length:", this.translatedTranscript?.length);
-            console.log("📄 Translated preview:", this.translatedTranscript?.substring(0, 200));
-            
-            // Update transcript editor with English translation
-            if (this.transcriptEditor) {
-                this.transcriptEditor.value = this.translatedTranscript;
-            }
-            
-            // Parse and display English segments
-            this.populateTranslatedSegments(this.translatedTranscript);
-            
-            console.log("✅ Translation complete");
-            
-        } catch (error) {
-            console.error("❌ Translation error:", error);
-            this.conversationSegments.innerHTML = `<div style="padding: 20px; text-align: center; color: #ef4444;">Translation failed: ${error.message}<br><button onclick="location.reload()" class="btn btn-sm" style="margin-top: 10px;">Reload</button></div>`;
-            
-            // Show error in transcript editor too
-            if (this.transcriptEditor) {
-                this.transcriptEditor.value = `Translation Error: ${error.message}`;
-            }
-        }
-    }
-    
-    /**
-     * Populate segments from translated English text
-     */
-    populateTranslatedSegments(translatedText) {
-        console.log("🔧 populateTranslatedSegments called");
-        console.log("📄 Full translated text:", translatedText);
-        console.log("📏 Translated text length:", translatedText?.length);
-        
-        this.conversationSegments.innerHTML = "";
-        
-        // Parse the translated text for segments
-        const lines = translatedText.split('\n');
-        console.log("📋 Split into", lines.length, "lines");
-        console.log("📋 Lines:", lines);
-        
-        const segments = [];
-        
-        let currentSpeaker = null;
-        let currentText = "";
-        
-        lines.forEach((line, idx) => {
-            console.log(`  Line ${idx}:`, line);
-            if (line.startsWith('[Doctor]:') || line.toLowerCase().startsWith('doctor:')) {
-                console.log(`    ✓ Found Doctor line`);
-                if (currentSpeaker && currentText.trim()) {
-                    segments.push({ speaker: currentSpeaker, text: currentText.trim() });
-                }
-                currentSpeaker = 'Doctor';
-                currentText = line.replace(/\[?Doctor\]?:/i, '').trim();
-            } else if (line.startsWith('[Patient]:') || line.toLowerCase().startsWith('patient:')) {
-                console.log(`    ✓ Found Patient line`);
-                if (currentSpeaker && currentText.trim()) {
-                    segments.push({ speaker: currentSpeaker, text: currentText.trim() });
-                }
-                currentSpeaker = 'Patient';
-                currentText = line.replace(/\[?Patient\]?:/i, '').trim();
-            } else if (line.trim()) {
-                console.log(`    → Continuing text`);
-                currentText += ' ' + line.trim();
-            }
-        });
-        
-        if (currentSpeaker && currentText.trim()) {
-            segments.push({ speaker: currentSpeaker, text: currentText.trim() });
-        }
-        
-        console.log("✅ Parsed segments:", segments.length);
-        console.log("📊 Segments:", segments);
-        
-        if (segments.length === 0) {
-            console.error("❌ No segments found in translated text");
-            this.conversationSegments.innerHTML = '<div style="padding: 20px; text-align: center; color: #64748b;">No segments found in translated text</div>';
-            return;
-        }
-        
-        console.log("🎨 Creating segment DOM elements...");
-        
-        // Display segments
-        segments.forEach((entry, index) => {
-            console.log(`  Creating segment ${index + 1}:`, entry.speaker, "-", entry.text.substring(0, 50) + "...");
-            
-            const segmentDiv = document.createElement("div");
-            const speakerLower = entry.speaker.toLowerCase();
-            segmentDiv.className = `segment-item ${speakerLower}`;
-            
-            const headerDiv = document.createElement("div");
-            headerDiv.className = "segment-header";
-            
-            const speakerSpan = document.createElement("span");
-            speakerSpan.className = `segment-speaker ${speakerLower}`;
-            speakerSpan.textContent = entry.speaker;
-            
-            const translatedBadge = document.createElement("span");
-            translatedBadge.className = "segment-confidence";
-            translatedBadge.textContent = "(Translated to English)";
-            translatedBadge.style.color = "#3b82f6";
-            translatedBadge.style.fontWeight = "600";
-            
-            headerDiv.appendChild(speakerSpan);
-            headerDiv.appendChild(translatedBadge);
-            
-            const textDiv = document.createElement("div");
-            textDiv.className = "segment-text";
-            textDiv.textContent = entry.text;
-            
-            segmentDiv.appendChild(headerDiv);
-            segmentDiv.appendChild(textDiv);
-            
-            this.conversationSegments.appendChild(segmentDiv);
-            console.log(`  ✅ Appended segment ${index + 1} to DOM`);
-        });
-        
-        console.log("🎉 All segments appended to conversationSegments container");
-        console.log("📦 Container element:", this.conversationSegments);
-        console.log("👶 Container children count:", this.conversationSegments.children.length);
-    }
-    
-    /**
-     * Close summary modal
-     */
-    closeSummaryModal_old() {
-        this.summaryModal.style.display = "none";
-    }
-    
-    /**
-     * Parse conversation segments from the appropriate box
-     * Always use Box 1 (original) for consistency
-     */
-    parseConversationSegments() {
-        // Always use Box 1 (original) for consistency
-        const text = this.conversationData.original || "";
-        
-        // Parse segments from text with [Doctor]: or [Patient]: format
-        const segments = [];
-        const lines = text.split('\n');
-        
-        let currentSpeaker = null;
-        let currentText = "";
-        
-        lines.forEach(line => {
-            if (line.startsWith('[Doctor]:')) {
-                // Save previous segment
-                if (currentSpeaker && currentText.trim()) {
-                    segments.push({
-                        speaker: currentSpeaker,
-                        text: currentText.trim(),
-                        start: null,
-                        end: null
-                    });
-                }
-                // Start new Doctor segment
-                currentSpeaker = 'Doctor';
-                currentText = line.replace('[Doctor]:', '').trim();
-            } else if (line.startsWith('[Patient]:')) {
-                // Save previous segment
-                if (currentSpeaker && currentText.trim()) {
-                    segments.push({
-                        speaker: currentSpeaker,
-                        text: currentText.trim(),
-                        start: null,
-                        end: null
-                    });
-                }
-                // Start new Patient segment
-                currentSpeaker = 'Patient';
-                currentText = line.replace('[Patient]:', '').trim();
-            } else if (line.trim()) {
-                // Continue current segment
-                currentText += ' ' + line.trim();
-            }
-        });
-        
-        // Add final segment
-        if (currentSpeaker && currentText.trim()) {
-            segments.push({
-                speaker: currentSpeaker,
-                text: currentText.trim(),
-                start: null,
-                end: null
-            });
-        }
-        
-        return segments;
-    }
-    
-    /**
-     * Get transcript text from appropriate box
-     */
-    getTranscriptText() {
-        console.log("🔍 getTranscriptText called");
-        
-        // Read directly from the DOM element that's displayed on screen
-        if (this.boxOriginal && this.boxOriginal.textContent) {
-            const text = this.boxOriginal.textContent.trim();
-            console.log("   → Reading from box-original DOM element");
-            console.log("   → Text length:", text.length);
-            console.log("   → Preview:", text.substring(0, 200));
-            return text;
-        }
-        
-        // Fallback to conversationData
-        console.log("   → Fallback to conversationData");
-        console.log("   Doctor lang:", this.doctorLang);
-        console.log("   Patient lang:", this.patientLang);
-        console.log("   conversationData.original:", this.conversationData.original?.substring(0, 300) + "...");
-        console.log("   conversationData.original length:", this.conversationData.original?.length);
-        
-        const sameLanguage = this.doctorLang === this.patientLang;
-        
-        if (sameLanguage) {
-            console.log("   → Using conversationData.original (same language)");
-            return this.conversationData.original || "";
-        }
-        
-        console.log("   → Using conversationData.original (different languages)");
-        return this.conversationData.original || "";
-    }
-    
-    /**
-     * Populate conversation segments display
-     */
-    populateConversationSegments() {
-        this.conversationSegments.innerHTML = "";
-        
-        // Get parsed segments
-        const segments = this.parseConversationSegments();
-        
-        if (segments.length === 0) {
-            this.conversationSegments.innerHTML = '<div style="padding: 20px; text-align: center; color: #64748b;">No conversation segments found</div>';
-            return;
-        }
-        
-        segments.forEach((entry, index) => {
-            // Skip entries without speaker or text
-            if (!entry.speaker || !entry.text) {
-                console.warn("Skipping entry without speaker or text:", entry);
-                return;
-            }
-            
-            const segmentDiv = document.createElement("div");
-            const speakerLower = (entry.speaker || "unknown").toLowerCase();
-            segmentDiv.className = `segment-item ${speakerLower}`;
-            
-            const headerDiv = document.createElement("div");
-            headerDiv.className = "segment-header";
-            
-            const speakerSpan = document.createElement("span");
-            speakerSpan.className = `segment-speaker ${speakerLower}`;
-            speakerSpan.textContent = entry.speaker || "Unknown";
-            
-            headerDiv.appendChild(speakerSpan);
-            
-            const textDiv = document.createElement("div");
-            textDiv.className = "segment-text";
-            textDiv.textContent = entry.text;
-            
-            segmentDiv.appendChild(headerDiv);
-            segmentDiv.appendChild(textDiv);
-            
-            this.conversationSegments.appendChild(segmentDiv);
-        });
-    }
-    
-    /**
-     * Format transcript for editor
-     */
-    formatTranscriptForEditor() {
-        let transcript = "";
-        this.conversationData.entries.forEach(entry => {
-            // Skip entries without speaker or text
-            if (!entry.speaker || !entry.text) {
-                return;
-            }
-            transcript += `${entry.speaker}: ${entry.text}\n\n`;
-        });
-        return transcript.trim();
-    }
-    
-    /**
-     * Generate medical summary and conclusion
-     */
-    async generateMedicalSummary() {
-        try {
-            this.generateSummaryBtn.disabled = true;
-            this.generatingIndicator.style.display = "flex";
-            
-            // Get edited transcript from textarea
-            const transcript = this.transcriptEditor.value;
-            
-            // Prepare payload
-            const payload = {
-                transcript: transcript,
-                doctor_name: this.selectedDoctor?.full_name || "Doctor",
-                patient_name: this.selectedPatient?.full_name || "Patient",
-                patient_id: this.selectedPatient?.patient_id || null,
-                doctor_lang: this.doctorLang,
-                patient_lang: this.patientLang,
-                duration: this.conversationDuration,
-                session_date: new Date().toISOString()
-            };
-            
-            console.log("📤 Generating medical summary...", payload);
-            
-            // Call backend endpoint
-            const response = await fetch("/api/transcribe_doctor_patient_conversation", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            });
-            
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error(data.error || "Backend processing failed");
-            }
-            
-            // Store response
-            this.postRecordingData = data.conversation_data;
-            
-            // Populate summary and conclusion editors
-            this.summaryEditor.value = data.conversation_data.summary;
-            this.conclusionEditor.value = data.conversation_data.conclusion;
-            
-            // Show sections
-            this.medicalSummaryModalSection.style.display = "block";
-            this.conclusionModalSection.style.display = "block";
-            
-            // Enable PDF save button
-            this.savePdfBtn.disabled = false;
-            
-            console.log("✅ Medical summary generated");
-            
-        } catch (error) {
-            console.error("❌ Error generating summary:", error);
-            alert(`Failed to generate medical summary: ${error.message}`);
-        } finally {
-            this.generateSummaryBtn.disabled = false;
-            this.generatingIndicator.style.display = "none";
-        }
-    }
-    
-    /**
-     * Save PDF from modal
-     */
-    async savePdfFromModal() {
-        try {
-            this.savePdfBtn.disabled = true;
-            this.savePdfBtn.textContent = "💾 Generating PDF...";
-            
-            // Get edited content
-            const transcript = this.transcriptEditor.value;
-            const summary = this.summaryEditor.value;
-            const conclusion = this.conclusionEditor.value;
-            
-            // Parse transcript into segments if it contains speaker markers
-            const segments = this.parseConversationSegments();
-            
-            // Prepare PDF payload matching backend PDFPayload model
-            const pdfPayload = {
-                pdf_type: "conversation",
-                raw_transcript: transcript,
-                summary: summary || null,
-                conclusion: conclusion || null,
-                metadata: {
-                    doctor_name: this.selectedDoctor?.full_name || "Doctor",
-                    patient_name: this.selectedPatient?.full_name || "Patient",
-                    session_date: new Date().toISOString(),
-                    duration: this.conversationDuration,
-                    doctor_lang: this.doctorLang,
-                    patient_lang: this.patientLang
-                }
-            };
-            
-            console.log("📤 Generating PDF...", pdfPayload);
-            
-            const response = await fetch("/api/generate_pdf", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(pdfPayload)
-            });
-            
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error(data.error || "PDF generation failed");
-            }
-            
-            // Download the PDF
-            const pdfBlob = await fetch(data.local_path).then(r => r.blob());
-            const url = window.URL.createObjectURL(pdfBlob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `CONVERSATION-${this.selectedDoctor?.full_name || "DOCTOR"}-${Date.now()}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-            
-            console.log("✅ PDF saved and downloaded");
-            
-            // Close modal
-            this.closeSummaryModal();
-            
-            // Show success message
-            alert("PDF generated and downloaded successfully!");
-            
-        } catch (error) {
-            console.error("❌ PDF generation error:", error);
-            alert(`Failed to generate PDF: ${error.message}`);
-        } finally {
-            this.savePdfBtn.disabled = false;
-            this.savePdfBtn.textContent = "💾 Save as PDF";
-        }
-    }
+            // Validate metadata\n            if (!this.validateMetadata()) {\n                return;\n            }\n            \n            // Disable button and show status\n            const button = pdfType === "conversation" ? this.pdfConversationBtn :\n                          pdfType === "patient_summary" ? this.pdfPatientSummaryBtn :\n                          this.pdfResearchBtn;\n            \n            button.disabled = true;\n            this.pdfStatus.textContent = `Generating ${pdfType} PDF...`;\n            this.pdfStatus.className = "pdf-status processing";\n            \n            // Prepare metadata\n            const metadata = {\n                doctor_name: this.selectedDoctor?.full_name || "Doctor",\n                patient_name: this.selectedPatient?.full_name || "Patient",\n                patient_id: this.selectedPatient?.patient_id || null,\n                session_date: new Date().toISOString(),\n                duration: this.conversationDuration,\n                language: this.postRecordingData?.language || this.patientLang,\n                translated: this.postRecordingData?.translated || false\n            };\n            \n            // Prepare payload based on PDF type\n            const payload = {\n                pdf_type: pdfType,\n                metadata: metadata\n            };\n            \n            if (pdfType === "conversation") {\n                payload.transcript = this.postRecordingData?.transcript || [];\n                payload.raw_transcript = this.postRecordingData?.raw_transcript || this.conversationData.original;\n            } else if (pdfType === "patient_summary") {\n                payload.summary = this.postRecordingData?.summary || "";\n                payload.conclusion = this.postRecordingData?.conclusion || "";\n                payload.transcript = this.postRecordingData?.transcript || [];\n            } else if (pdfType === "research") {\n                payload.summary = this.postRecordingData?.summary || "";\n                payload.conclusion = this.postRecordingData?.conclusion || "";\n                payload.patient_problem = this.postRecordingData?.summary || "Medical consultation";\n            }\n            \n            // Call backend to generate and upload PDF\n            const response = await fetch("/api/generate_pdf", {\n                method: "POST",\n                headers: {\n                    "Content-Type": "application/json"\n                },\n                body: JSON.stringify(payload)\n            });\n            \n            const data = await response.json();\n            \n            if (!data.success) {\n                throw new Error(data.error || "PDF generation failed");\n            }\n            \n            // Show success with Azure URL\n            this.pdfStatus.textContent = `✅ PDF uploaded to Azure: ${data.blob_url}`;\n            this.pdfStatus.className = "pdf-status success";\n            \n            // Re-enable button after delay\n            setTimeout(() => {\n                button.disabled = false;\n                this.pdfStatus.textContent = "";\n            }, 5000);\n            \n            console.log(`✅ ${pdfType} PDF generated:`, data.blob_url);\n            \n        } catch (error) {\n            console.error(`❌ PDF generation error (${pdfType}):`, error);\n            this.pdfStatus.textContent = `❌ Error: ${error.message}`;\n            this.pdfStatus.className = "pdf-status error";\n            \n            // Re-enable button\n            setTimeout(() => {\n                if (pdfType === "conversation") this.pdfConversationBtn.disabled = false;\n                else if (pdfType === "patient_summary") this.pdfPatientSummaryBtn.disabled = false;\n                else this.pdfResearchBtn.disabled = false;\n            }, 3000);\n        }\n    }
     
     /**
      * Validate metadata before PDF upload
      */
-    validateMetadata() {
-        const required = [
-            { field: "doctor_name", value: this.selectedDoctor?.full_name },
-            { field: "patient_name", value: this.selectedPatient?.full_name },
-            { field: "session_date", value: new Date().toISOString() },
-            { field: "duration", value: this.conversationDuration }
-        ];
-        
-        const missing = required.filter(r => !r.value);
-        
-        if (missing.length > 0) {
-            this.showErrorModal(
-                "Missing Metadata",
-                `Cannot upload PDF. Missing required fields: ${missing.map(m => m.field).join(", ")}`,
-                false
-            );
-            return false;
-        }
-        
-        return true;
-    }
+    validateMetadata() {\n        const required = [\n            { field: "doctor_name", value: this.selectedDoctor?.full_name },\n            { field: "patient_name", value: this.selectedPatient?.full_name },\n            { field: "session_date", value: new Date().toISOString() },\n            { field: "duration", value: this.conversationDuration }\n        ];\n        \n        const missing = required.filter(r => !r.value);\n        \n        if (missing.length > 0) {\n            this.showErrorModal(\n                "Missing Metadata",\n                `Cannot upload PDF. Missing required fields: ${missing.map(m => m.field).join(", ")}`,\n                false\n            );\n            return false;\n        }\n        \n        return true;\n    }
     
     /**
-     * Show error modal
-     */
-    showErrorModal(title, message, showRetry = false, retryCallback = null) {
-        this.errorModalTitle.textContent = title;
-        this.errorModalMessage.textContent = message;
-        
-        if (showRetry && retryCallback) {
-            this.errorModalRetryBtn.style.display = "inline-block";
-            this.errorModalRetryBtn.onclick = () => {
-                this.hideErrorModal();
-                retryCallback();
-            };
-        } else {
-            this.errorModalRetryBtn.style.display = "none";
-        }
-        
-        this.errorModal.style.display = "block";
-    }
+     * Show error modal\n     */
+    showErrorModal(title, message, showRetry = false, retryCallback = null) {\n        this.errorModalTitle.textContent = title;\n        this.errorModalMessage.textContent = message;\n        \n        if (showRetry && retryCallback) {\n            this.errorModalRetryBtn.style.display = "inline-block";\n            this.errorModalRetryBtn.onclick = () => {\n                this.hideErrorModal();\n                retryCallback();\n            };\n        } else {\n            this.errorModalRetryBtn.style.display = "none";\n        }\n        \n        this.errorModal.style.display = "block";\n    }
     
     /**
      * Hide error modal
      */
-    hideErrorModal() {
-        this.errorModal.style.display = "none";
-    }
+    hideErrorModal() {\n        this.errorModal.style.display = "none";\n    }
 }
 
 // Initialize app when DOM is ready
