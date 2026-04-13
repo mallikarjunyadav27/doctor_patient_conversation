@@ -539,7 +539,7 @@ async def transcribe_doctor_patient_conversation(payload: ConversationPayload):
     """
     try:
         from langchain_openai import ChatOpenAI
-        from langchain.schema import HumanMessage, SystemMessage
+        from langchain_core.messages import HumanMessage, SystemMessage
         
         print(f"📥 Processing conversation for {payload.doctor_name} and {payload.patient_name}")
         
@@ -632,7 +632,7 @@ async def generate_medical_summary(request: dict):
     """
     try:
         from langchain_openai import ChatOpenAI
-        from langchain.schema import HumanMessage, SystemMessage
+        from langchain_core.messages import HumanMessage, SystemMessage
         
         conversation_text = request.get("conversation_text", "")
         
@@ -717,7 +717,7 @@ async def translate_to_english(request: dict):
     """
     try:
         from langchain_openai import ChatOpenAI
-        from langchain.schema import HumanMessage, SystemMessage
+        from langchain_core.messages import HumanMessage, SystemMessage
         
         text = request.get("text", "")
         source_language = request.get("source_language", "unknown")
