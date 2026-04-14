@@ -293,69 +293,82 @@
     <!-- Post-Recording Summary Modal -->
     <div id="summary-modal" class="modal" style="display: none;">
         <div class="modal-content summary-modal-content">
-            <div class="modal-header">
-                <h2>PCES - Doctor - Patient Conversation Segments</h2>
+
+            <!-- Header — matches RAG app conversation-segments-modal main-header -->
+            <div class="pces-main-header">
+                <h1>Doctor-Patient Conversation Segments</h1>
+                <p class="subtitle">Voice Diarization Results</p>
             </div>
-            
+
             <div class="modal-body summary-modal-body">
-                <!-- Participant Info -->
-                <div class="summary-section info-section">
-                    <div class="info-single-line">
+                <!-- Participant Info — stacked, one per row like RAG app -->
+                <div class="pces-names-section">
+                    <div class="pces-name-display">
                         <strong>Doctor:</strong> <span id="summary-doctor-name"></span>
-                        <span class="separator">|</span>
+                    </div>
+                    <div class="pces-name-display">
                         <strong>Patient:</strong> <span id="summary-patient-name"></span>
-                        <span class="separator">|</span>
+                    </div>
+                    <div class="pces-name-display">
                         <strong>Processing Date:</strong> <span id="summary-date"></span>
                     </div>
                 </div>
 
-                <!-- Processing Information -->
-                <div class="summary-section">
-                    <h3 class="section-title">Processing Information</h3>
-                    <div class="info-box">
-                        <p><strong>Voice Diarization:</strong> OpenAI-based Speaker Separation&nbsp;&nbsp;&nbsp;&nbsp;<strong>Language Majorly Spoken:</strong> <span id="summary-language"></span></p>
-                        <p><strong>Transcription Engine:</strong> Whisper&nbsp;&nbsp;&nbsp;&nbsp;<strong>Total Segments:</strong> <span id="summary-segments"></span></p>
+                <!-- Processing Information — session-info-box style -->
+                <div class="pces-session-info-box">
+                    <h3>Processing Information</h3>
+                    <div class="pces-session-details">
+                        <div class="pces-session-item">
+                            <strong>Voice Diarization:</strong> OpenAI-based Speaker Separation
+                            &nbsp;&nbsp;&nbsp;&nbsp;
+                            <strong>Transcription Engine:</strong> Whisper
+                        </div>
+                        <div class="pces-session-item">
+                            <strong>Language Majorly Spoken:</strong> <span id="summary-language"></span>
+                            &nbsp;&nbsp;&nbsp;&nbsp;
+                            <strong>Total Segments:</strong> <span id="summary-segments"></span>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Conversation Segments -->
-                <div class="summary-section">
-                    <h3 class="section-title">Conversation Segments:</h3>
+                <div class="pces-section">
+                    <span class="pces-segments-label">Conversation Segments:</span>
                     <div id="conversation-segments" class="segments-container"></div>
                 </div>
 
                 <!-- Complete Transcript (Editable) -->
-                <div class="summary-section compact-spacing">
-                    <h3 class="section-title">Complete Transcript (Editable):</h3>
-                    <div class="warning-banner">Doctor, please edit accordingly</div>
+                <div class="pces-section transcript-section">
+                    <label for="transcript-editor">Complete Transcript (Editable):</label>
+                    <div class="pces-edit-prompt">Doctor, please edit accordingly</div>
                     <textarea id="transcript-editor" class="transcript-editor" rows="10"></textarea>
-                </div>
 
-                <!-- Generate Summary Button -->
-                <div class="summary-section center compact-spacing">
-                    <button id="generate-summary-btn" class="btn btn-success btn-lg">
-                        Generate Medical Summary & Recommendations
-                    </button>
-                    <div id="generating-indicator" class="generating-indicator" style="display: none;">
-                        <span class="spinner"></span> Generating with AI...
+                    <!-- Generate Summary Button -->
+                    <div class="pces-generate-section">
+                        <button id="generate-summary-btn" class="btn btn-success btn-lg">
+                            Generate Medical Summary &amp; Recommendations
+                        </button>
+                        <div id="generating-indicator" class="generating-indicator" style="display: none;">
+                            <span class="spinner"></span> Generating with AI...
+                        </div>
                     </div>
                 </div>
 
                 <!-- Medical Summary (Editable) -->
-                <div id="medical-summary-section" class="summary-section compact-spacing" style="display: none;">
-                    <h3 class="section-title">Medical Summary (Editable):</h3>
-                    <div class="warning-banner">Doctor, please review and edit accordingly</div>
+                <div id="medical-summary-section" class="pces-section medical-section" style="display: none;">
+                    <label for="summary-editor">Medical Summary (Editable):</label>
+                    <div class="pces-edit-prompt">Doctor, please review and edit accordingly</div>
                     <textarea id="summary-editor" class="transcript-editor" rows="8" placeholder="AI-generated medical summary will appear here..."></textarea>
                 </div>
 
-                <!-- Conclusion & Recommendations (Editable) -->
-                <div id="conclusion-section" class="summary-section compact-spacing" style="display: none;">
-                    <h3 class="section-title">Conclusions & Recommendations (Editable):</h3>
-                    <div class="warning-banner">Doctor, please review and edit accordingly</div>
+                <!-- Conclusions & Recommendations (Editable) -->
+                <div id="conclusion-section" class="pces-section conclusion-section" style="display: none;">
+                    <label for="conclusion-editor">Conclusions &amp; Recommendations (Editable):</label>
+                    <div class="pces-edit-prompt">Doctor, please review and edit accordingly</div>
                     <textarea id="conclusion-editor" class="transcript-editor" rows="8" placeholder="AI-generated conclusion and recommendations will appear here..."></textarea>
                 </div>
             </div>
-            
+
             <div class="modal-footer compact-footer">
                 <button id="save-pdf-btn" class="btn btn-success" disabled>
                     💾 Save as PDF

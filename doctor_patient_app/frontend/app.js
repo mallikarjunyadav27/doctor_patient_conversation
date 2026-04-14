@@ -1240,9 +1240,18 @@ class DoctorPatientApp {
                 throw new Error(data.error || "PDF generation failed");
             }
             
-            // Show success with Azure URL
-            this.pdfStatus.textContent = `✅ PDF uploaded to Azure: ${data.blob_url}`;
+            // Show success with URL (Azure blob or local fallback)
+            const pdfUrl = data.pdf_url || data.blob_url;
+            const isAzure = data.azure_available !== false && data.blob_url;
+            this.pdfStatus.textContent = isAzure
+                ? `✅ PDF uploaded to Azure: ${pdfUrl}`
+                : `✅ PDF ready — ${data.message || "downloading locally"}`;
             this.pdfStatus.className = "pdf-status success";
+
+            // Open/download the PDF
+            if (pdfUrl) {
+                window.open(pdfUrl, "_blank");
+            }
             
             // Re-enable button after delay
             setTimeout(() => {
@@ -1250,7 +1259,7 @@ class DoctorPatientApp {
                 this.pdfStatus.textContent = "";
             }, 5000);
             
-            console.log(`✅ ${pdfType} PDF generated:`, data.blob_url);
+            console.log(`✅ ${pdfType} PDF generated:`, data.pdf_url || data.blob_url);
             
         } catch (error) {
             console.error(`❌ PDF generation error (${pdfType}):`, error);
@@ -1824,16 +1833,17 @@ class DoctorPatientApp {
                 throw new Error(data.error || "PDF generation failed");
             }
             
-            // Download the PDF
-            const pdfBlob = await fetch(data.local_path).then(r => r.blob());
-            const url = window.URL.createObjectURL(pdfBlob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `CONVERSATION-${this.selectedDoctor?.full_name || "DOCTOR"}-${Date.now()}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
+            // Use pdf_url (works for both Azure blob URL and local fallback token URL)
+            const downloadUrl = data.pdf_url || data.blob_url || data.local_path;
+            if (downloadUrl) {
+                const a = document.createElement("a");
+                a.href = downloadUrl;
+                a.download = data.filename || `CONVERSATION-${Date.now()}.pdf`;
+                a.target = "_blank";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
             
             console.log("✅ PDF saved and downloaded");
             

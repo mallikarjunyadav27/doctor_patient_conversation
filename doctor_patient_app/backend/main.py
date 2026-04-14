@@ -5,9 +5,11 @@ WebSocket server for handling audio streaming and real-time transcription
 import os
 import asyncio
 import json
+import time
+import uuid
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Request
 from pydantic import BaseModel
@@ -22,6 +24,29 @@ from utils import RecordingManager
 from database import get_db
 
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# In-memory store for locally-served PDF downloads (Azure fallback).
+# Each entry: {"content": bytes, "filename": str, "expires": float}
+# TTL: 5 minutes
+# ---------------------------------------------------------------------------
+_PDF_STORE: Dict[str, Dict[str, Any]] = {}
+_PDF_TTL_SECONDS = 300  # 5 minutes
+
+
+def _store_pdf(content: bytes, filename: str) -> str:
+    """Store PDF bytes and return a download token."""
+    token = str(uuid.uuid4())
+    _PDF_STORE[token] = {
+        "content": content,
+        "filename": filename,
+        "expires": time.time() + _PDF_TTL_SECONDS,
+    }
+    # Prune expired entries while we're here
+    expired = [k for k, v in _PDF_STORE.items() if v["expires"] < time.time()]
+    for k in expired:
+        del _PDF_STORE[k]
+    return token
 
 # Azure storage setup
 AZURE_AVAILABLE = False
@@ -782,18 +807,13 @@ Provide ONLY the English translation, maintaining the exact same format with [Do
 async def generate_pdf(payload: PDFPayload):
     """
     Generate PDF and upload to Azure Blob Storage.
-    
+    Falls back to a local download token when Azure is unavailable or fails.
+
     Supports three PDF types:
     - conversation: Full conversation transcript
     - patient_summary: Patient summary with clinical notes
     - research: Medical research notes
     """
-    if not AZURE_AVAILABLE:
-        return {
-            "success": False,
-            "error": "Azure storage not configured"
-        }
-    
     try:
         print(f"🔍 Generating PDF: type={payload.pdf_type}")
         print(f"   Metadata: {payload.metadata}")
@@ -979,64 +999,91 @@ async def generate_pdf(payload: PDFPayload):
         patient_name = payload.metadata.get('patient_name', 'Patient').replace(' ', '_')
         filename = f"{payload.pdf_type}_{patient_name}_{timestamp}.pdf"
         
-        # Upload to Azure
-        storage_manager = get_storage_manager()
+        # Upload to Azure (with graceful fallback to local download)
         blob_url = None
-        
-        if payload.pdf_type == "research":
-            blob_url = storage_manager.upload_research_pdf(
-                pdf_content, 
-                filename, 
-                payload.patient_problem,
-                payload.metadata
-            )
-        elif payload.pdf_type == "patient_summary":
-            patient_data = {
-                'patient_name': payload.metadata.get('patient_name'),
-                'patient_id': payload.metadata.get('patient_id'),
-                'doctor_name': payload.metadata.get('doctor_name'),
-                'session_date': payload.metadata.get('session_date')
-            }
-            blob_url = storage_manager.upload_patient_summary_pdf(
-                pdf_content,
-                filename,
-                patient_data,
-                payload.metadata
-            )
-        elif payload.pdf_type == "conversation":
-            conversation_data = {
-                'doctor_name': payload.metadata.get('doctor_name'),
-                'patient_name': payload.metadata.get('patient_name'),
-                'duration': payload.metadata.get('duration'),
-                'session_date': payload.metadata.get('session_date')
-            }
-            blob_url = storage_manager.upload_conversation_pdf(
-                pdf_content,
-                filename,
-                conversation_data,
-                payload.metadata
-            )
-        
+        azure_error = None
+
+        if AZURE_AVAILABLE:
+            try:
+                storage_manager = get_storage_manager()
+                if payload.pdf_type == "research":
+                    blob_url = storage_manager.upload_research_pdf(
+                        pdf_content,
+                        filename,
+                        payload.patient_problem,
+                        payload.metadata
+                    )
+                elif payload.pdf_type == "patient_summary":
+                    patient_data = {
+                        'patient_name': payload.metadata.get('patient_name'),
+                        'patient_id': payload.metadata.get('patient_id'),
+                        'doctor_name': payload.metadata.get('doctor_name'),
+                        'session_date': payload.metadata.get('session_date')
+                    }
+                    blob_url = storage_manager.upload_patient_summary_pdf(
+                        pdf_content,
+                        filename,
+                        patient_data,
+                        payload.metadata
+                    )
+                elif payload.pdf_type == "conversation":
+                    conversation_data = {
+                        'doctor_name': payload.metadata.get('doctor_name'),
+                        'patient_name': payload.metadata.get('patient_name'),
+                        'duration': payload.metadata.get('duration'),
+                        'session_date': payload.metadata.get('session_date')
+                    }
+                    blob_url = storage_manager.upload_conversation_pdf(
+                        pdf_content,
+                        filename,
+                        conversation_data,
+                        payload.metadata
+                    )
+                if blob_url:
+                    print(f"✅ PDF uploaded to Azure: {blob_url}")
+            except Exception as az_err:
+                azure_error = str(az_err)
+                print(f"⚠️ Azure upload failed, using local fallback: {az_err}")
+
+        # Local fallback: serve PDF via download token
         if not blob_url:
-            raise Exception("Azure upload failed")
-        
-        print(f"✅ PDF uploaded to Azure: {blob_url}")
-        
+            # Also save to recordings dir for persistence
+            local_dir = os.path.join(os.path.dirname(__file__), "recordings")
+            os.makedirs(local_dir, exist_ok=True)
+            local_path = os.path.join(local_dir, filename)
+            with open(local_path, 'wb') as f:
+                f.write(pdf_content)
+            print(f"✅ PDF saved locally: {local_path}")
+
+            token = _store_pdf(pdf_content, filename)
+            download_url = f"/api/download_pdf/{token}"
+            message = "PDF ready for download (Azure storage not available)"
+            if azure_error:
+                message = f"PDF ready for download (Azure upload failed: {azure_error})"
+            return {
+                "success": True,
+                "pdf_url": download_url,
+                "filename": filename,
+                "local_path": f"/recordings/{filename}",
+                "message": message,
+                "azure_available": False,
+            }
+
         # Also save locally for download
         local_dir = os.path.join(os.path.dirname(__file__), "recordings")
         os.makedirs(local_dir, exist_ok=True)
         local_path = os.path.join(local_dir, filename)
-        
         with open(local_path, 'wb') as f:
             f.write(pdf_content)
-        
         print(f"✅ PDF saved locally: {local_path}")
         
         return {
             "success": True,
             "blob_url": blob_url,
+            "pdf_url": blob_url,
             "filename": filename,
-            "local_path": f"/recordings/{filename}"
+            "local_path": f"/recordings/{filename}",
+            "azure_available": True,
         }
         
     except Exception as e:
@@ -1047,6 +1094,25 @@ async def generate_pdf(payload: PDFPayload):
             "success": False,
             "error": str(e)
         }
+
+
+@app.get("/api/download_pdf/{token}")
+async def download_pdf(token: str):
+    """
+    Serve a locally-generated PDF by its one-time download token.
+    Tokens expire after 5 minutes.
+    """
+    entry = _PDF_STORE.get(token)
+    if not entry:
+        return {"error": "PDF not found or token expired"}, 404
+    if entry["expires"] < time.time():
+        del _PDF_STORE[token]
+        return {"error": "Download token has expired"}, 410
+    return Response(
+        content=entry["content"],
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{entry["filename"]}"'},
+    )
 
 
 if __name__ == "__main__":
