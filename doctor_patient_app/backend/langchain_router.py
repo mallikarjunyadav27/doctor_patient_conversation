@@ -56,13 +56,16 @@ class LangChainRouter:
         if not isinstance(text, str):
             text = str(text)
         
-        # Clean up text - remove artifacts
-        text = text.replace("<end>", "").strip()
-        
+        # Clean up text - remove artifacts, but PRESERVE Soniox's own token spacing
+        # (each token typically carries a leading space; stripping it here is what
+        #  forced downstream heuristic re-spacing and caused word fragmentation).
+        text = text.replace("<end>", "")
+
         # Remove timestamp patterns like "{o}: 2026-02-01T17:57:44.621955"
-        text = re.sub(r'\{[^}]*\}:\s*\d{4}-\d{2}-\d{2}T[\d:\.]+', '', text).strip()
-        
-        if not text:
+        text = re.sub(r'\{[^}]*\}:\s*\d{4}-\d{2}-\d{2}T[\d:\.]+', '', text)
+
+        # Drop only tokens with no real content (empty or whitespace-only)
+        if not text or not text.strip():
             return None
         
         # Get speaker info from token

@@ -19,7 +19,7 @@ class SonioxWSClient:
     def __init__(self):
         self.ws = None
         self.api_key = os.getenv("SONIOX_API_KEY", "")
-        self.model = os.getenv("SONIOX_MODEL", "stt-rt-v3")
+        self.model = os.getenv("SONIOX_MODEL", "stt-rt-v5")
         self.doctor_lang = "en"
         self.patient_lang = "te"
         self.config_sent = False

@@ -74,7 +74,7 @@ doctor_patient_app/
 4. **Configure environment** - Edit `.env` file:
    ```env
    SONIOX_API_KEY=your_actual_api_key_here
-   SONIOX_MODEL=stt-rt-v3
+   SONIOX_MODEL=stt-rt-v5
    ```
 
 5. **Run the server**:
@@ -182,7 +182,7 @@ ws://localhost:8000/ws
 SONIOX_API_KEY=your_api_key_here
 
 # Optional - Current production model
-SONIOX_MODEL=stt-rt-v3
+SONIOX_MODEL=stt-rt-v5
 
 # Optional - Server settings
 API_HOST=0.0.0.0
@@ -195,7 +195,7 @@ LOG_LEVEL=INFO
 ```python
 {
     "api_key": "your_key",
-    "model": "stt-rt-v3",
+    "model": "stt-rt-v5",
     "audio_format": "pcm_s16le",
     "sample_rate": 16000,
     "num_channels": 1,

@@ -182,7 +182,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                     if not data:
                         print("ℹ️ Received empty buffer from browser - sending end-of-stream to Soniox")
-                        # End-of-stream signal
+                        # Flush any buffered audio, then signal end-of-stream
+                        remainder = audio_processor.flush()
+                        if remainder:
+                            await soniox_client.send_audio(remainder)
                         await soniox_client.end_stream()
                         break
                     
@@ -193,17 +196,32 @@ async def websocket_endpoint(websocket: WebSocket):
                     if chunk_count % 10 == 0:
                         print(f"   🔊 Received {chunk_count} audio chunks ({total_bytes} bytes total, chunk size: {len(data)})")
                     
-                    # Process and send to Soniox
-                    await soniox_client.send_audio(data)
+                    # Re-buffer to Soniox's recommended ~100ms / 3200-byte chunks.
+                    # Sending too-small chunks lets network jitter look like silence
+                    # (premature finalization → fragmentation); 3200 bytes gives the
+                    # engine enough continuous audio for stable sentence boundaries.
+                    out = audio_processor.add_chunk(data)
+                    while out:
+                        await soniox_client.send_audio(out)
+                        out = audio_processor.add_chunk(b"")
             
             except WebSocketDisconnect:
                 print("Browser disconnected - closing Soniox stream")
                 ws_closed = True
+                remainder = audio_processor.flush()
+                if remainder:
+                    try:
+                        await soniox_client.send_audio(remainder)
+                    except:
+                        pass
                 await soniox_client.end_stream()
             except Exception as e:
                 print(f"Error receiving from browser: {e}")
                 ws_closed = True
                 try:
+                    remainder = audio_processor.flush()
+                    if remainder:
+                        await soniox_client.send_audio(remainder)
                     await soniox_client.end_stream()
                 except:
                     pass
