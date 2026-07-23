@@ -35,6 +35,7 @@ class DoctorPatientApp {
         this.initializeElements();
         this.attachEventListeners();
         this.checkServerHealth();
+        this._loadParamsFromURL();
     }
     
     /**
@@ -193,6 +194,70 @@ class DoctorPatientApp {
         });
     }
     
+    /**
+     * Pre-populate doctor and patient from PCES RAG App URL query parameters.
+     * When PCES opens this app with ?doctor=<name>&patient=<name>&patient_id=<id>,
+     * skip the manual selection modal and auto-confirm participants.
+     */
+    _loadParamsFromURL() {
+        const params = new URLSearchParams(window.location.search);
+        const doctorName  = params.get('doctor')     || '';
+        const patientName = params.get('patient')    || '';
+        const patientId   = params.get('patient_id') || '';
+        const doctorId    = params.get('doctor_id')  || '';
+
+        if (!doctorName || !patientName) return; // nothing to pre-fill
+
+        this.selectedDoctor = {
+            first_name: doctorName.split(' ')[0] || doctorName,
+            last_name:  doctorName.split(' ').slice(1).join(' ') || '',
+            full_name:  doctorName
+        };
+        this.selectedPatient = {
+            patient_id: patientId || null,
+            first_name: patientName.split(' ')[0] || patientName,
+            last_name:  patientName.split(' ').slice(1).join(' ') || '',
+            full_name:  patientName
+        };
+
+        // Update header display
+        this.currentDoctorName.textContent  = doctorName;
+        this.currentPatientName.textContent = patientName;
+        if (this.participantInfo) this.participantInfo.style.display = 'flex';
+
+        // Enable start button and update selection button label
+        this.startBtn.disabled = false;
+        this.selectParticipantsBtn.textContent = '👥 Change Participants';
+
+        // Show a banner so user knows context was passed from PCES
+        this._showPCESBanner(doctorName, patientName);
+
+        console.log(`✓ [PCES] Pre-filled — Doctor: ${doctorName}  Patient: ${patientName} (ID: ${patientId || 'n/a'})`);
+    }
+
+    /**
+     * Show a brief auto-dismissing banner when context is passed from PCES.
+     */
+    _showPCESBanner(doctorName, patientName) {
+        const existing = document.getElementById('pces-context-banner');
+        if (existing) existing.remove();
+
+        const banner = document.createElement('div');
+        banner.id = 'pces-context-banner';
+        banner.style.cssText = [
+            'position:fixed', 'top:16px', 'left:50%', 'transform:translateX(-50%)',
+            'background:#2563eb', 'color:#fff', 'padding:10px 22px',
+            'border-radius:8px', 'font-size:14px', 'font-weight:600',
+            'box-shadow:0 4px 12px rgba(0,0,0,0.25)', 'z-index:9999',
+            'transition:opacity 0.5s'
+        ].join(';');
+        banner.textContent = `✅ PCES context loaded — Dr. ${doctorName} / ${patientName}`;
+        document.body.appendChild(banner);
+
+        setTimeout(() => { banner.style.opacity = '0'; }, 3500);
+        setTimeout(() => { banner.remove(); }, 4100);
+    }
+
     /**
      * Get human-readable language name
      */
