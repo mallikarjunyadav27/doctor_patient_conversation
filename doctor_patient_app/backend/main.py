@@ -557,6 +557,7 @@ class ConversationPayload(BaseModel):
     patient_lang: str
     duration: str
     session_date: str
+    provider_label: str = "Doctor"
 
 
 class PDFPayload(BaseModel):
@@ -584,7 +585,7 @@ async def transcribe_doctor_patient_conversation(payload: ConversationPayload):
         from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage, SystemMessage
         
-        print(f"📥 Processing conversation for {payload.doctor_name} and {payload.patient_name}")
+        print(f"📥 Processing conversation for {payload.doctor_name} and {payload.patient_name} [{payload.provider_label}]")
         
         # Parse transcript (simple parsing - in production, use Soniox structured data)
         transcript_entries = []
@@ -595,10 +596,11 @@ async def transcribe_doctor_patient_conversation(payload: ConversationPayload):
                 continue
             
             # Parse [Doctor]: text or [Patient]: text format
-            if line.startswith('[Doctor]:'):
+            # Also accept provider-label variant e.g. [Nurse]: or [Admin Staff]:
+            if line.startswith('[Doctor]:') or line.startswith(f'[{payload.provider_label}]:'):
                 transcript_entries.append({
-                    "role": "Doctor",
-                    "text": line.replace('[Doctor]:', '').strip(),
+                    "role": payload.provider_label,
+                    "text": line.split(':', 1)[1].strip() if ':' in line else line,
                     "start": None,
                     "end": None
                 })
@@ -616,7 +618,7 @@ async def transcribe_doctor_patient_conversation(payload: ConversationPayload):
         print(f"🤖 Using OpenAI model: {model_name}")
         
         # Single optimized prompt - reduces API calls from 2 to 1
-        combined_prompt = f"""Summarize this doctor-patient conversation in two sections:
+        combined_prompt = f"""Summarize this {payload.provider_label.lower()}-patient conversation in two sections:
 
 SUMMARY: Chief complaint, symptoms, history, medications, findings.
 CONCLUSION: Assessment, treatment plan, follow-up, tests needed.
@@ -904,7 +906,8 @@ async def generate_pdf(payload: PDFPayload):
         # Generate based on PDF type
         if payload.pdf_type == "conversation":
             # Full Conversation PDF
-            story.append(Paragraph("Doctor-Patient Conversation Transcript", title_style))
+            provider_lbl = payload.metadata.get('provider_label', 'Doctor')
+            story.append(Paragraph(f"{provider_lbl}-Patient Conversation Transcript", title_style))
             story.append(Paragraph("Voice Diarization & AI-Powered Transcription", subtitle_style))
             
             # Metadata section
@@ -917,7 +920,7 @@ async def generate_pdf(payload: PDFPayload):
                 except:
                     pass
                     
-            story.append(Paragraph(f"<b>Doctor:</b> {payload.metadata.get('doctor_name', 'N/A')}", normal_style))
+            story.append(Paragraph(f"<b>{provider_lbl}:</b> {payload.metadata.get('doctor_name', 'N/A')}", normal_style))
             story.append(Paragraph(f"<b>Patient:</b> {payload.metadata.get('patient_name', 'N/A')}", normal_style))
             story.append(Paragraph(f"<b>Session Date:</b> {session_date}", normal_style))
             story.append(Paragraph(f"<b>Duration:</b> {payload.metadata.get('duration', 'N/A')}", normal_style))
@@ -926,7 +929,7 @@ async def generate_pdf(payload: PDFPayload):
             doctor_lang = payload.metadata.get('doctor_lang', '')
             patient_lang = payload.metadata.get('patient_lang', '')
             if doctor_lang or patient_lang:
-                langs = f"Doctor: {doctor_lang.upper() if doctor_lang else 'N/A'} | Patient: {patient_lang.upper() if patient_lang else 'N/A'}"
+                langs = f"{provider_lbl}: {doctor_lang.upper() if doctor_lang else 'N/A'} | Patient: {patient_lang.upper() if patient_lang else 'N/A'}"
                 story.append(Paragraph(f"<b>Languages:</b> {langs}", normal_style))
             
             story.append(Spacer(1, 0.2*inch))

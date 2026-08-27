@@ -1401,3 +1401,10 @@ body {
     display: block;
     margin-bottom: 8px;
 }
+/* Read-only textarea style for non-Doctor roles */
+textarea.pces-readonly {
+    background: #f5f5f5 !important;
+    color: #666 !important;
+    cursor: not-allowed !important;
+    border-color: #ccc !important;
+}

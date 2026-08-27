@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Doctor-Patient Interactive Conversation</title>
+    <title id="page-title">Doctor-Patient Interactive Conversation</title>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
     <div class="container">
         <!-- Header -->
         <header class="header">
-            <h1>🎤 Doctor-Patient Interactive Conversation</h1>
+            <h1 id="app-main-h1">🎤 Doctor-Patient Interactive Conversation</h1>
             <p>Real-time Speech-to-Text & Two-Way Translation powered by Soniox</p>
             
             <!-- Participant Info Display -->
@@ -27,7 +27,7 @@
                 <!-- Language Selection -->
                 <div class="language-group">
                     <div class="language-control">
-                        <label for="doctor-lang">🏥 Doctor Language:</label>
+                        <label for="doctor-lang" id="doctor-lang-label">🏥 Doctor Language:</label>
                         <select id="doctor-lang">
                             <option value="en">English (en)</option>
                             <option value="es">Spanish (es)</option>
@@ -136,7 +136,7 @@
             <!-- Box 2: Doctor Language -->
             <div id="box-doctor-container" class="box box-2">
                 <div class="box-header">
-                    <h2>🟩 Box #2: Doctor's View</h2>
+                    <h2 id="box-doctor-header">🟩 Box #2: Doctor's View</h2>
                     <span class="box-info" id="box-doctor-lang">English</span>
                 </div>
                 <div class="box-content" id="box-doctor">
@@ -228,7 +228,7 @@
             
             <div class="modal-body">
                 <div class="form-group">
-                    <label for="doctor-search">👨‍⚕️ Search Doctor:</label>
+                    <label for="doctor-search" id="doctor-search-label">👨‍⚕️ Search Doctor:</label>
                     <input 
                         type="text" 
                         id="doctor-search" 
@@ -296,7 +296,7 @@
 
             <!-- Header — matches RAG app conversation-segments-modal main-header -->
             <div class="pces-main-header">
-                <h1>Doctor-Patient Conversation Segments</h1>
+                <h1 id="summary-modal-h1">Doctor-Patient Conversation Segments</h1>
                 <p class="subtitle">Voice Diarization Results</p>
             </div>
 
@@ -304,7 +304,7 @@
                 <!-- Participant Info — stacked, one per row like RAG app -->
                 <div class="pces-names-section">
                     <div class="pces-name-display">
-                        <strong>Doctor:</strong> <span id="summary-doctor-name"></span>
+                        <strong><span id="summary-provider-label">Doctor</span>:</strong> <span id="summary-doctor-name"></span>
                     </div>
                     <div class="pces-name-display">
                         <strong>Patient:</strong> <span id="summary-patient-name"></span>

@@ -18,6 +18,7 @@ class DoctorPatientApp {
         this.selectedDoctor = null;
         this.selectedPatient = null;
         this.searchTimeout = null;
+        this.providerLabel = 'Doctor'; // updated by _loadParamsFromURL from URL ?role= param
         
         // Conversation storage
         this.conversationData = {
@@ -196,7 +197,7 @@ class DoctorPatientApp {
     
     /**
      * Pre-populate doctor and patient from PCES RAG App URL query parameters.
-     * When PCES opens this app with ?doctor=<name>&patient=<name>&patient_id=<id>,
+     * When PCES opens this app with ?doctor=<name>&patient=<name>&patient_id=<id>&role=<lbl>,
      * skip the manual selection modal and auto-confirm participants.
      */
     _loadParamsFromURL() {
@@ -205,6 +206,12 @@ class DoctorPatientApp {
         const patientName = params.get('patient')    || '';
         const patientId   = params.get('patient_id') || '';
         const doctorId    = params.get('doctor_id')  || '';
+        const roleParam   = params.get('role')       || 'Doctor';
+
+        // Store provider label and apply UI labels/editability
+        this.providerLabel = roleParam;
+        this._applyRoleLabels(roleParam);
+        this._applyRoleEditability(roleParam);
 
         if (!doctorName || !patientName) return; // nothing to pre-fill
 
@@ -232,7 +239,76 @@ class DoctorPatientApp {
         // Show a banner so user knows context was passed from PCES
         this._showPCESBanner(doctorName, patientName);
 
-        console.log(`✓ [PCES] Pre-filled — Doctor: ${doctorName}  Patient: ${patientName} (ID: ${patientId || 'n/a'})`);
+        console.log(`✓ [PCES] Pre-filled — ${roleParam}: ${doctorName}  Patient: ${patientName} (ID: ${patientId || 'n/a'})`);
+    }
+
+    /**
+     * Apply role-aware labels throughout the UI (Doctor ↔ Nurse ↔ Admin Staff).
+     * Uses direct DOM assignment (not text replacement) so it is idempotent.
+     */
+    _applyRoleLabels(lbl) {
+        const safe = lbl || 'Doctor';
+        const lblLower = safe.toLowerCase();
+
+        // Page title and main h1
+        document.title = `${safe}-Patient Interactive Conversation`;
+        const mainH1 = document.getElementById('app-main-h1');
+        if (mainH1) mainH1.textContent = `🎤 ${safe}-Patient Interactive Conversation`;
+
+        // Doctor Language label
+        const langLabel = document.getElementById('doctor-lang-label');
+        if (langLabel) langLabel.textContent = `🏥 ${safe} Language:`;
+
+        // Box #2 header
+        const boxHeader = document.getElementById('box-doctor-header');
+        if (boxHeader) boxHeader.textContent = `🟩 Box #2: ${safe}'s View`;
+
+        // Summary modal h1
+        const modalH1 = document.getElementById('summary-modal-h1');
+        if (modalH1) modalH1.textContent = `${safe}-Patient Conversation Segments`;
+
+        // "Doctor:" prefix span in participant section
+        const provLabel = document.getElementById('summary-provider-label');
+        if (provLabel) provLabel.textContent = safe;
+
+        // "Search Doctor:" label in participant modal
+        const searchLabel = document.getElementById('doctor-search-label');
+        if (searchLabel) searchLabel.textContent = `👨‍⚕️ Search ${safe}:`;
+
+        // All edit-prompt divs — replace any role word
+        document.querySelectorAll('.pces-edit-prompt').forEach(el => {
+            el.textContent = el.textContent.replace(/\b(Doctor|Nurse|Admin Staff)\b/g, safe);
+        });
+
+        console.log(`[PCES][RoleLabel] provider label → ${safe}`);
+    }
+
+    /**
+     * Make transcript/summary/conclusion editors readonly for non-Doctor roles.
+     */
+    _applyRoleEditability(lbl) {
+        const editable = !lbl || lbl === 'Doctor';
+        const ids = ['transcript-editor', 'summary-editor', 'conclusion-editor'];
+        ids.forEach(id => {
+            const ta = document.getElementById(id);
+            if (!ta) return;
+            if (editable) {
+                ta.removeAttribute('readonly');
+                ta.classList.remove('pces-readonly');
+            } else {
+                ta.setAttribute('readonly', 'readonly');
+                ta.classList.add('pces-readonly');
+            }
+        });
+        // Update "(Editable)" labels to "(Read-only)" for non-doctors
+        document.querySelectorAll('label[for="transcript-editor"], label[for="summary-editor"], label[for="conclusion-editor"]').forEach(lbl => {
+            if (editable) {
+                lbl.textContent = lbl.textContent.replace('(Read-only)', '(Editable)');
+            } else {
+                lbl.textContent = lbl.textContent.replace('(Editable)', '(Read-only)');
+            }
+        });
+        console.log(`[PCES][Editability] editors → ${editable ? 'editable' : 'read-only'}`);
     }
 
     /**
@@ -1100,7 +1176,8 @@ class DoctorPatientApp {
                 doctor_lang: this.doctorLang,
                 patient_lang: this.patientLang,
                 duration: this.conversationDuration,
-                session_date: new Date().toISOString()
+                session_date: new Date().toISOString(),
+                provider_label: this.providerLabel || "Doctor"
             };
             
             console.log("📤 Sending to backend for processing...", conversationPayload);
@@ -1268,7 +1345,8 @@ class DoctorPatientApp {
                 session_date: new Date().toISOString(),
                 duration: this.conversationDuration,
                 language: this.postRecordingData?.language || this.patientLang,
-                translated: this.postRecordingData?.translated || false
+                translated: this.postRecordingData?.translated || false,
+                provider_label: this.providerLabel || "Doctor"
             };
             
             // Prepare payload based on PDF type
@@ -1805,7 +1883,8 @@ class DoctorPatientApp {
                 doctor_lang: this.doctorLang,
                 patient_lang: this.patientLang,
                 duration: this.conversationDuration,
-                session_date: new Date().toISOString()
+                session_date: new Date().toISOString(),
+                provider_label: this.providerLabel || "Doctor"
             };
             
             console.log("📤 Generating medical summary...", payload);
